@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>击发机构受力联动剖视仿真</title>
+<style>
+  :root{
+    --bg:#0e1420; --panel:rgba(17,25,40,.90); --line:#26334d; --fg:#e6edf7;
+    --muted:#93a4bd; --accent:#5eead4; --amber:#f2c14e; --red:#ff5d5d; --green:#4ade80; --blue:#7dd3fc; --pink:#f472b6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);
+    font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;font-size:13px}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;touch-action:none}
+  .panel{position:fixed;top:14px;right:14px;width:322px;max-height:calc(100vh - 28px);overflow-y:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 15px;
+    backdrop-filter:blur(10px);box-shadow:0 10px 40px rgba(0,0,0,.45);z-index:10}
+  .panel h1{font-size:15px;margin:0 0 2px;letter-spacing:.5px}
+  .panel .sub{color:var(--muted);font-size:11px;margin-bottom:10px;line-height:1.5}
+  .sec{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}
+  .sec h2{font-size:12px;color:var(--accent);margin:0 0 7px;font-weight:700;letter-spacing:1px}
+  .row{display:flex;justify-content:space-between;gap:8px;align-items:center;margin:5px 0}
+  .row .k{color:var(--muted);white-space:nowrap}
+  .row .v{font-variant-numeric:tabular-nums;font-weight:600}
+  .row input[type=range]{flex:1;margin:0 8px;accent-color:var(--accent);min-width:0}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  button{background:#1c2a44;color:var(--fg);border:1px solid var(--line);border-radius:9px;
+    padding:8px 6px;font-size:12px;cursor:pointer;transition:background .15s,border-color .15s;font-family:inherit}
+  button:hover{background:#26395c;border-color:#3b537d}
+  button.primary{background:#0f4a43;border-color:#14655b}
+  button.primary:hover{background:#136056}
+  button.warn{background:#5a2430;border-color:#7d3142}
+  button.warn:hover{background:#742e3d}
+  .status{padding:8px 10px;border-radius:9px;background:#16223a;border:1px solid var(--line);
+    font-weight:700;text-align:center;letter-spacing:1px;margin-bottom:6px}
+  .status.s-cock{color:var(--green);border-color:#2c6e49}
+  .status.s-limit{color:var(--amber);border-color:#8a6d2f}
+  .status.s-block{color:var(--red);border-color:#8a3535}
+  .status.s-fire{color:var(--pink);border-color:#8a3d68}
+  .warnline{color:var(--red);font-size:11px;line-height:1.5;display:none;margin-top:5px}
+  .legend{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;font-size:11px;color:var(--muted)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .hint{position:fixed;left:14px;bottom:12px;z-index:10;color:var(--muted);font-size:11.5px;line-height:1.7;
+    background:rgba(13,20,34,.72);border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-width:580px}
+  .hint b{color:var(--fg);font-weight:600}
+  .tag{display:inline-block;padding:1px 6px;border-radius:6px;background:#1c2a44;margin:0 2px}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="panel">
+  <h1>击发机构 · 受力联动剖视台</h1>
+  <div class="sub">等节距圆柱螺旋簧 · 簧丝长度守恒(压缩时簧圈胀径,画面放大 8 倍显示,读数为真实值) · 单位 mm / N / °</div>
+
+  <div id="status" class="status">自由状态</div>
+  <div id="warnline" class="warnline"></div>
+
+  <div class="sec">
+    <h2>实时读数</h2>
+    <div class="row"><span class="k">击针行程 s</span><span class="v" id="r-travel">0.0 mm</span></div>
+    <div class="row"><span class="k">弹簧当前长度 L</span><span class="v" id="r-len">—</span></div>
+    <div class="row"><span class="k">压缩量 Δ = L₀−L</span><span class="v" id="r-comp">—</span></div>
+    <div class="row"><span class="k">并紧长度 Ls = n·d</span><span class="v" id="r-solid">—</span></div>
+    <div class="row"><span class="k">压缩余量 L−Ls</span><span class="v" id="r-margin">—</span></div>
+    <div class="row"><span class="k">簧圈中径 D(真实胀径)</span><span class="v" id="r-diam">—</span></div>
+    <div class="row"><span class="k">节距 p</span><span class="v" id="r-pitch">—</span></div>
+    <div class="row"><span class="k">簧力 F = k·Δ</span><span class="v" id="r-force">0 N</span></div>
+    <div class="row"><span class="k">扳机转角 β</span><span class="v" id="r-beta">0.0°</span></div>
+    <div class="row"><span class="k">阻铁转角 α</span><span class="v" id="r-alpha">0.0°</span></div>
+    <div class="row"><span class="k">阻铁距让位还差</span><span class="v" id="r-seargo">12.0°</span></div>
+    <div class="row"><span class="k">扳机距让位还差</span><span class="v" id="r-triggo">20.0°</span></div>
+  </div>
+
+  <div class="sec">
+    <h2>弹簧参数(实时改算并紧长度)</h2>
+    <div class="row"><span class="k">有效圈数 n</span><input type="range" id="s-n" min="4" max="14" step="1" value="8"><span class="v" id="v-n">8</span></div>
+    <div class="row"><span class="k">簧丝直径 d</span><input type="range" id="s-d" min="2" max="6" step="0.5" value="4"><span class="v" id="v-d">4.0</span></div>
+    <div class="row"><span class="k">自由中径 D₀</span><input type="range" id="s-d0" min="30" max="60" step="1" value="44"><span class="v" id="v-d0">44</span></div>
+    <div class="row"><span class="k">剪切模量 G</span><input type="range" id="s-g" min="70000" max="85000" step="500" value="79000"><span class="v" id="v-g">79000</span></div>
+  </div>
+
+  <div class="sec">
+    <h2>操作</h2>
+    <div class="btns">
+      <button id="b-reset" class="primary">复位装配</button>
+      <button id="b-nearsolid" class="warn">预置:接近并紧</button>
+      <button id="b-fire">演示击发</button>
+      <button id="b-cut">启用剖切</button>
+      <button id="b-explode">分解观察</button>
+      <button id="b-fit">视图居中</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>图例</h2>
+    <div class="legend">
+      <span><i class="dot" style="background:#8a93a2"></i>底把(固定)</span>
+      <span><i class="dot" style="background:#d9dee7"></i>击针</span>
+      <span><i class="dot" style="background:#f2c14e"></i>击针簧</span>
+      <span><i class="dot" style="background:#7dd3fc"></i>阻铁</span>
+      <span><i class="dot" style="background:#f472b6"></i>扳机</span>
+      <span><i class="dot" style="background:#ff5d5d"></i>干涉 / 锁止</span>
+    </div>
+  </div>
+</div>
+
+<div class="hint">
+  <b>操作:</b> 空白处拖拽平移 · 滚轮缩放(触屏双指) · 拖<span class="tag">击针</span>向下压缩弹簧 ·
+  拖<span class="tag">扳机</span>绕铰点旋转 · 拖<span class="tag">剖切刀</span>竖直移动切面 ·
+  分解模式下五个零件均可自由拖开。<br>
+  <b>联动规则:</b> 行程达待击阈值 s=42mm 后阻铁才扣入卡槽;扣扳机至 β=20°(对应 α=12°)且压缩足够,阻铁才让位松脱;
+  压缩不足时扣扳机,阻铁锁止不动(红圈);压到 s=48mm 时尾部先撞限位面(红圈+接触线),
+  此时弹簧距并紧仍有余量,永远压不到并紧。
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-viewport@4.38.0/dist/viewport.min.js"></script>
+<script>
+(() => {
+"use strict";
+
+/* ============ 场景与视口 ============ */
+const app = new PIXI.Application({
+  resizeTo: document.getElementById("stage"), antialias: true,
+  background: 0x0e1420, resolution: Math.min(devicePixelRatio || 1, 2), autoDensity: true,
+});
+document.getElementById("stage").appendChild(app.view);
+const viewport = new PIXI.Viewport({
+  screenWidth: innerWidth, screenHeight: innerHeight,
+  worldWidth: 2000, worldHeight: 2000,
+});
+app.stage.addChild(viewport);
+viewport
+  .drag({ mouseButtons: "all" })
+  .wheel({ center: "pointer", percent: 3.2 })
+  .pinch().decelerate({ friction: 0.88 })
+  .setZoom(1.12).moveCenter(0, -10);
+addEventListener("resize", () => viewport.resize(innerWidth, innerHeight));
+
+/* ============ 几何常量(mm,y 向下为正;向下拖 = 压缩) ============ */
+const C = {
+  L0: 84, xCock: 42, xLim: 48,                         // 自由长 / 待击阈值 / 机械限位行程
+  alphaRel: 12, betaRel: 20, betaBlock: 8, alphaMax: 30, betaMax: 27,
+  swellVis: 8,                                         // 胀径渲染放大倍数(读数仍为真实值)
+  wallL: -81, wallR: 58, wallW: 22,
+  topY: -400, topH: 26,                                // 顶部导向桥
+  springBridgeY: 10, springBridgeH: 26,                // 弹簧下座桥(固定),顶面 y=10
+  ledgeY: 252, ledgeH: 18, ledgeX: -81, ledgeW: 65,    // 限位凸台,右端 x=-16
+  rodHalf: 9, rodTop: -300, rodBot: 230,
+  seatX: -24, seatY: -74, seatW: 48, seatH: 14,        // 击针弹簧座(弹簧顶端锚面)
+  flangeX: -26, flangeY: 180, flangeW: 20, flangeH: 24,// 尾部凸缘:自由底 204,限位时 252
+  notchY: 118, notchH: 20, notchDepth: 9,              // 阻铁卡槽(随击针下移)
+  searP: { x: 20, y: 240 }, trigP: { x: 36, y: 340 },
+};
+const COL = {
+  frame: 0x8a93a2, frameDark: 0x565f6d,
+  striker: 0xd9dee7, strikerDark: 0x98a2b2,
+  spring: 0xf2c14e, springDark: 0xc9962f, springHi: 0xffd97a,
+  sear: 0x7dd3fc, trig: 0xf472b6,
+  red: 0xff5d5d, green: 0x4ade80, teal: 0x5eead4, blue: 0x7dd3fc, amber: 0xf2c14e,
+};
+
+/* ============ 状态 ============ */
+const state = {
+  mode: "normal", travel: 0, beta: 0,
+  firing: false, fireV: 0, tween: null,
+  cut: false, xCut: 0,
+  exploded: {
+    frame:   { x: 0, y: 0 },
+    striker: { x: 150, y: 60 },
+    spring:  { x: -190, y: -30 },
+    sear:    { x: 110, y: 80 },
+    trigger: { x: 160, y: 140 },
+  },
+};
+const params = { n: 8, d: 4, D0: 44, G: 79000 };
+
+/* ============ 物理模型 ============ */
+function springGeom() {
+  const { n, d, D0, G } = params;
+  const Ls = n * d;
+  const xSolid = C.L0 - Ls;                            // 并紧对应行程(无限位时)
+  const L = Math.max(C.L0 - state.travel, Ls);
+  const p = L / n;
+  const Lw0 = Math.hypot(Math.PI * D0, C.L0 / n);      // 每圈簧丝中心线长度(守恒)
+  const D = Math.sqrt(Math.max(Lw0 * Lw0 - p * p, 0)) / Math.PI;
+  const Dsolid = Math.sqrt(Math.max(Lw0 * Lw0 - d * d, 0)) / Math.PI;
+  const Dvis = D0 + (D - D0) * C.swellVis;             // 渲染放大胀径
+  const k = G * d ** 4 / (8 * D0 ** 3 * n);            // N/mm
+  const F = k * Math.max(0, C.L0 - L);
+  return { Ls, xSolid, L, p, D, Dsolid, Dvis, k, F,
+           margin: L - Ls, comp: C.L0 - L, swellPct: (D / D0 - 1) * 100,
+           r: Dvis / 2 };
+}
+function searState() {
+  const atCock = state.travel >= C.xCock - 2;
+  const triggerEngaged = state.beta >= C.betaBlock;
+  // 机械锁止:未待击时阻铁鼻被击针杆挡住,扳机空转、阻铁转角恒为 0
+  const blocked = triggerEngaged && !atCock;
+  let alpha = 0;
+  if (atCock && triggerEngaged)
+    alpha = Math.min(C.alphaMax, (state.beta - C.betaBlock) * (C.alphaRel / (C.betaRel - C.betaBlock)));
+  const canRelease = atCock && alpha >= C.alphaRel - 0.01;
+  return { alpha, blocked, canRelease, atCock };
+}
+
+/* ============ 图层 ============ */
+const ghostLayer = new PIXI.Container(), solidLayer = new PIXI.Container();
+const faceLayer = new PIXI.Container(), dimLayer = new PIXI.Container();
+const hiLayer = new PIXI.Container(), hitLayer = new PIXI.Container(), handleLayer = new PIXI.Container();
+viewport.addChild(ghostLayer, faceLayer, solidLayer, dimLayer, hiLayer, hitLayer, handleLayer);
+
+const maskGhost = new PIXI.Graphics(), maskSolid = new PIXI.Graphics();
+ghostLayer.addChild(maskGhost); solidLayer.addChild(maskSolid);
+ghostLayer.mask = maskGhost; solidLayer.mask = maskSolid;
+
+function partPair() {
+  const ghost = new PIXI.Container(), solid = new PIXI.Container();
+  const gg = new PIXI.Graphics(), sg = new PIXI.Graphics();
+  ghost.addChild(gg); solid.addChild(sg);
+  ghostLayer.addChild(ghost); solidLayer.addChild(solid);
+  return { ghost, solid, gg, sg };
+}
+const P_frame = partPair(), P_striker = partPair(), P_spring = partPair(),
+      P_sear = partPair(), P_trig = partPair();
+
+const H = {};
+let drag = null;
+function makeHit(name) {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g); c.interactive = true; c.cursor = "grab";
+  c.on("pointerdown", (e) => { e.stopPropagation(); beginDrag(name, e); });
+  hitLayer.addChild(c);
+  H[name] = { c, g };
+}
+/* 顺序即命中优先级(后者优先):弹簧在最底,击针覆盖其上,剖切刀始终最上 */
+["frame", "spring", "striker", "sear", "trigger", "cut"].forEach(makeHit);
+
+/* 网格 */
+const grid = new PIXI.Graphics();
+grid.lineStyle(0.6, 0x1b2740, 0.7);
+for (let x = -400; x <= 400; x += 25) grid.moveTo(x, -460).lineTo(x, 460);
+for (let y = -460; y <= 460; y += 25) grid.moveTo(-400, y).lineTo(400, y);
+viewport.addChildAt(grid, 0);
+
+/* 剖面线纹理 */
+const hatchCvs = document.createElement("canvas");
+hatchCvs.width = hatchCvs.height = 14;
+{
+  const c = hatchCvs.getContext("2d");
+  c.strokeStyle = "rgba(94,234,212,.9)"; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(-2, 16); c.lineTo(16, -2); c.moveTo(-2, 2); c.lineTo(2, -2); c.stroke();
+}
+const hatchTex = PIXI.Texture.from(hatchCvs);
+const tiling = new PIXI.TilingSprite(hatchTex, 4000, 4000);
+tiling.position.set(-2000, -2000); tiling.visible = false;
+const tilingMask = new PIXI.Graphics();
+faceLayer.addChild(tiling, tilingMask); tiling.mask = tilingMask;
+const gFace = new PIXI.Graphics(), gDim = new PIXI.Graphics(), gHi = new PIXI.Graphics(), gHandle = new PIXI.Graphics();
+faceLayer.addChild(gFace); dimLayer.addChild(gDim); hiLayer.addChild(gHi); handleLayer.addChild(gHandle);
+const textObjs = [];
+function addText(txt, x, y, color, size) {
+  const t = new PIXI.Text(txt, {
+    fontFamily: "Microsoft YaHei,PingFang SC,sans-serif",
+    fontSize: size || 12, fill: color, fontWeight: "600",
+  });
+  t.position.set(x, y); dimLayer.addChild(t); textObjs.push(t); return t;
+}
+function clearTexts() { textObjs.forEach(t => t.destroy()); textObjs.length = 0; }
+
+/* ============ 零件绘制(局部坐标,v7 API) ============ */
+function drawFrame(g, ghost) {
+  const a = ghost ? 0.30 : 1, col = ghost ? 0x7c8696 : COL.frame;
+  const box = (x, y, w, h, r) => {
+    g.beginFill(col, a); g.drawRoundedRect(x, y, w, h, r || 4); g.endFill();
+    g.lineStyle(1.4, COL.frameDark, 0.9 * a); g.drawRoundedRect(x, y, w, h, r || 4);
+  };
+  box(C.wallL, -380, C.wallW, 760);
+  box(C.wallR, -380, C.wallW, 760);
+  box(C.wallL, C.topY, 161, C.topH);                         // 顶部导向桥
+  box(C.wallL, C.springBridgeY, 161, C.springBridgeH);      // 弹簧下座桥
+  g.beginFill(0x0e1420, a).drawRect(-14, C.springBridgeY, 28, C.springBridgeH).endFill(); // 杆孔
+  box(C.ledgeX, C.ledgeY, C.ledgeW, C.ledgeH, 3);           // 限位凸台
+  g.beginFill(col, a);
+  g.drawRoundedRect(C.wallL, 360, 161, 24, 4);
+  for (const p of [C.searP, C.trigP]) g.drawCircle(p.x, p.y, 15);
+  g.endFill();
+  g.lineStyle(1.4, COL.frameDark, 0.9 * a);
+  for (const p of [C.searP, C.trigP]) g.drawCircle(p.x, p.y, 5);
+  g.lineStyle(1.6, COL.red, 0.75 * a)                       // 限位面刻线
+   .moveTo(C.ledgeX + C.ledgeW, C.ledgeY).lineTo(C.ledgeX + C.ledgeW, C.ledgeY + C.ledgeH);
+}
+
+function drawStriker(g, ghost) {
+  const col = ghost ? 0xb9c2d0 : COL.striker, a = ghost ? 0.35 : 1;
+  g.lineStyle(1.3, COL.strikerDark, 0.85 * a);
+  g.beginFill(col, a);
+  g.drawRoundedRect(-C.rodHalf, C.rodTop, C.rodHalf * 2, C.rodBot - C.rodTop, 4);  // 主杆
+  g.drawRoundedRect(C.seatX, C.seatY, C.seatW, C.seatH, 3);                        // 弹簧座
+  g.drawRoundedRect(C.flangeX, C.flangeY, C.flangeW, C.flangeH, 3);                // 尾部凸缘
+  g.drawRoundedRect(-12, -324, 24, 26, 3);                                          // 击针颈
+  g.drawPolygon([-8, -324, 0, -342, 8, -324]);                                      // 击针尖(朝上)
+  g.endFill();
+  g.beginFill(ghost ? 0x556070 : 0x2a3342, ghost ? 0.5 : 1)
+   .drawRect(C.rodHalf - 1, C.notchY, C.notchDepth, C.notchH).endFill();           // 卡槽凹口
+  g.lineStyle(1.2, COL.strikerDark, 0.8)
+   .moveTo(C.rodHalf, C.notchY).lineTo(C.rodHalf + C.notchDepth, C.notchY)
+   .moveTo(C.rodHalf, C.notchY + C.notchH).lineTo(C.rodHalf + C.notchDepth, C.notchY + C.notchH);
+}
+
+/* 等节距正弦投影弹簧;丝长守恒 → D 随压缩胀大(渲染放大) */
+function drawSpring(g, ghost, geom, freeMode) {
+  const r = freeMode ? params.D0 / 2 : geom.r;
+  const n = params.n, wire = params.d;
+  const yTop = freeMode ? C.seatY : (C.seatY + state.travel);   // 随击针座下移
+  const yBot = C.springBridgeY;                                  // 固定下座
+  const L = yBot - yTop;
+  const steps = Math.max(60, Math.floor(n * 28));
+  const front = [], back = [];
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps, th = u * n * Math.PI * 2;
+    const pt = [r * Math.sin(th), yTop + L * u];
+    (Math.cos(th) >= 0 ? front : back).push(pt);
+  }
+  g.lineStyle(wire, ghost ? 0x9a7a2e : COL.springDark, ghost ? 0.30 : 0.85);
+  for (let i = 0; i < back.length - 1; i++) g.moveTo(back[i][0], back[i][1]).lineTo(back[i + 1][0], back[i + 1][1]);
+  g.lineStyle(wire, ghost ? 0xbfa05c : COL.spring, ghost ? 0.40 : 1);
+  for (let i = 0; i < front.length - 1; i++) g.moveTo(front[i][0], front[i][1]).lineTo(front[i + 1][0], front[i + 1][1]);
+  g.lineStyle(wire, ghost ? 0xbfa05c : COL.springHi, ghost ? 0.4 : 1);
+  g.drawEllipse(0, yTop - wire / 2, r, r * 0.30);
+  g.drawEllipse(0, yBot + wire / 2, r, r * 0.30);
+  return { yTop, yBot, r };
+}
+
+/* 阻铁局部:枢点原点;尾(26,42)→ 枢 → 鼻(10,-74) */
+function drawSear(g, ghost) {
+  const col = ghost ? 0x5b97b8 : COL.sear, a = ghost ? 0.35 : 1;
+  g.lineStyle(10, col, a);
+  g.moveTo(26, 42).lineTo(0, 0).lineTo(10, -74);
+  g.lineStyle(1.4, 0x2b4a5e, a);
+  g.beginFill(col, a).drawCircle(0, 0, 12).endFill();
+  g.drawCircle(0, 0, 5);
+  g.beginFill(col, a).drawPolygon([10, -74, 22, -78, 24, -63, 8, -60]).endFill();
+}
+/* 扳机局部:枢点原点;上臂(-20,-58)→ 枢 → 下杆(0,52) */
+function drawTrigger(g, ghost) {
+  const col = ghost ? 0xb05b89 : COL.trig, a = ghost ? 0.35 : 1;
+  g.lineStyle(11, col, a);
+  g.moveTo(-20, -58).lineTo(0, 0).lineTo(0, 52);
+  g.beginFill(col, a);
+  g.drawCircle(0, 0, 13);
+  g.drawRoundedRect(-9, 46, 18, 22, 6);
+  g.endFill();
+}
+
+/* ============ 主渲染 ============ */
+let sgCache, ssCache;
+function render() {
+  const geom = springGeom(); sgCache = geom;
+  const ss = searState(); ssCache = ss;
+  const ex = state.mode === "exploded";
+  const ZERO = { x: 0, y: 0 };
+  const eo = (n) => (ex ? state.exploded[n] : ZERO);
+
+  [P_frame, P_striker, P_spring, P_sear, P_trig].forEach(p => { p.gg.clear(); p.sg.clear(); });
+  gFace.clear(); gDim.clear(); gHi.clear(); gHandle.clear();
+  tilingMask.clear(); clearTexts();
+
+  /* --- 容器位姿:击针向下平移 +travel --- */
+  P_frame.ghost.position.set(eo("frame").x, eo("frame").y);
+  P_frame.solid.position.copyFrom(P_frame.ghost.position);
+  P_striker.ghost.position.set(eo("striker").x, state.travel + eo("striker").y);
+  P_striker.solid.position.copyFrom(P_striker.ghost.position);
+  P_spring.ghost.position.set(eo("spring").x, eo("spring").y);
+  P_spring.solid.position.copyFrom(P_spring.ghost.position);
+  P_sear.ghost.position.set(C.searP.x + eo("sear").x, C.searP.y + eo("sear").y);
+  P_sear.solid.position.copyFrom(P_sear.ghost.position);
+  P_sear.ghost.rotation = P_sear.solid.rotation = -ss.alpha * Math.PI / 180;
+  P_trig.ghost.position.set(C.trigP.x + eo("trigger").x, C.trigP.y + eo("trigger").y);
+  P_trig.solid.position.copyFrom(P_trig.ghost.position);
+  P_trig.ghost.rotation = P_trig.solid.rotation = state.beta * Math.PI / 180;
+
+  drawFrame(P_frame.gg, true);  drawFrame(P_frame.sg, false);
+  drawStriker(P_striker.gg, true); drawStriker(P_striker.sg, false);
+  const spInfo = drawSpring(P_spring.sg, false, geom, ex);
+  drawSpring(P_spring.gg, true, geom, ex);
+  drawSear(P_sear.gg, true); drawSear(P_sear.sg, false);
+  drawTrigger(P_trig.gg, true); drawTrigger(P_trig.sg, false);
+
+  /* --- 剖切 mask:刀左侧 ghost,右侧实体 --- */
+  if (state.cut) {
+    maskGhost.clear().beginFill(0xffffff).drawRect(-2000, -2000, state.xCut + 2000, 4000).endFill();
+    maskSolid.clear().beginFill(0xffffff).drawRect(state.xCut, -2000, 4000, 4000).endFill();
+  } else {
+    maskGhost.clear();
+    maskSolid.clear().beginFill(0xffffff).drawRect(-2000, -2000, 4000, 4000).endFill();
+  }
+  tiling.visible = state.cut;
+
+  /* --- 剖面 band --- */
+  const sOff = P_striker.solid.position, fOff = P_frame.solid.position, pOff = P_spring.solid.position;
+  const bands = [
+    { x: C.wallL + fOff.x, y: -380 + fOff.y, w: 161, h: 764 },
+    { x: -26 + sOff.x, y: C.rodTop + sOff.y, w: 52, h: 580 },
+    { x: -spInfo.r + pOff.x - 3, y: spInfo.yTop + pOff.y, w: spInfo.r * 2 + 6, h: spInfo.yBot - spInfo.yTop },
+  ];
+  for (const b of bands) {
+    if (state.cut && state.xCut > b.x && state.xCut < b.x + b.w) {
+      gFace.beginFill(0x2dd4bf, 0.14).drawRect(state.xCut - 7, b.y, 7, b.h).endFill();
+      tilingMask.beginFill(0xffffff).drawRect(state.xCut - 7, b.y, 7, b.h).endFill();
+    }
+  }
+  if (state.cut) {
+    gFace.lineStyle(1.6, COL.teal, 0.95);
+    gFace.moveTo(state.xCut, -460).lineTo(state.xCut, 460);
+    gHandle.beginFill(0x0f2e2b, 0.92).drawRoundedRect(state.xCut - 9, -432, 18, 34, 7).endFill();
+    gHandle.lineStyle(1.5, COL.teal).drawRoundedRect(state.xCut - 9, -432, 18, 34, 7);
+    gHandle.beginFill(COL.teal, 0.9).drawCircle(state.xCut, -415, 3.2).endFill();
+    addText("剖切面(拖我)", state.xCut + 12, -430, COL.teal, 12);
+  }
+
+  drawDimensions(geom, ss, spInfo);
+  drawHighlights(geom, ss);
+  buildHits(geom, spInfo);
+  updatePanel(geom, ss);
+}
+
+/* ============ 标注 ============ */
+function arrowV(g, x, y1, y2, color) {
+  g.lineStyle(1.3, color, 1);
+  g.moveTo(x, y1).lineTo(x, y2);
+  const h = 5, s = Math.sign(y2 - y1);
+  g.moveTo(x, y1).lineTo(x - 3.5, y1 + h * s).lineTo(x + 3.5, y1 + h * s).lineTo(x, y1);
+  g.moveTo(x, y2).lineTo(x - 3.5, y2 - h * s).lineTo(x + 3.5, y2 - h * s).lineTo(x, y2);
+}
+function arcV(g, cx, cy, r, a0, a1, color) {
+  g.lineStyle(1.6, color, 1);
+  const steps = 20;
+  for (let i = 0; i < steps; i++) {
+    const t0 = a0 + (a1 - a0) * i / steps, t1 = a0 + (a1 - a0) * (i + 1) / steps;
+    g.moveTo(cx + r * Math.sin(t0 * Math.PI / 180), cy - r * Math.cos(t0 * Math.PI / 180));
+    g.lineTo(cx + r * Math.sin(t1 * Math.PI / 180), cy - r * Math.cos(t1 * Math.PI / 180));
+  }
+}
+function drawDimensions(geom, ss, spInfo) {
+  const g = gDim;
+  /* 行程:卡槽自由位置 → 当前位置(向下),参考线贴近击针右侧 */
+  const xA = 96;
+  const yRest = C.notchY, yNow = C.notchY + state.travel;
+  g.lineStyle(1, 0x5b6b86, 0.9);
+  g.moveTo(C.rodHalf + C.notchDepth + 2, yRest).lineTo(xA + 6, yRest);
+  g.moveTo(C.rodHalf + C.notchDepth + 2, yNow).lineTo(xA + 6, yNow);
+  arrowV(g, xA, yRest, yNow, COL.blue);
+  addText(`击针行程 s=${state.travel.toFixed(1)} mm`, xA + 9, (yRest + yNow) / 2 - 8, COL.blue);
+
+  /* 压缩余量:当前弹簧座 → 并紧时弹簧座位置 */
+  const ySeatNow = spInfo.yTop;
+  const ySeatSolid = C.seatY + geom.xSolid;
+  const xM = -52;
+  g.lineStyle(1, 0x8a7440, 1);
+  g.moveTo(xM - 6, ySeatNow).lineTo(xM + 6, ySeatNow);
+  g.moveTo(xM - 6, ySeatSolid).lineTo(xM + 6, ySeatSolid);
+  if (Math.abs(ySeatSolid - ySeatNow) > 5) {
+    arrowV(g, xM, ySeatNow, ySeatSolid, COL.amber);
+    addText(`压缩余量 ${geom.margin.toFixed(1)} mm`, xM - 150, (ySeatNow + ySeatSolid) / 2 - 8, COL.amber);
+  } else {
+    addText("余量≈" + geom.margin.toFixed(1) + " mm", xM - 122, ySeatNow - 16, COL.amber, 11);
+  }
+
+  /* 限位面:引线指向凸台右端面,标签放到凸台左侧外 */
+  g.lineStyle(1.2, COL.red, 0.85);
+  g.moveTo(C.ledgeX + C.ledgeW, C.ledgeY + C.ledgeH / 2).lineTo(C.ledgeX + C.ledgeW - 20, C.ledgeY + C.ledgeH / 2);
+  addText("限位面", C.ledgeX - 6, C.ledgeY - 16, COL.red, 11);
+
+  /* 角度弧(标签向外偏移,避开干涉高亮区) */
+  arcV(g, C.searP.x, C.searP.y, 27, 0, -ss.alpha, COL.sear);
+  addText(`α=${ss.alpha.toFixed(1)}°`, C.searP.x + 32, C.searP.y - 30, COL.sear, 11);
+  arcV(g, C.trigP.x, C.trigP.y, 31, 0, state.beta, COL.trig);
+  addText(`β=${state.beta.toFixed(1)}°`, C.trigP.x - 72, C.trigP.y - 26, COL.trig, 11);
+
+  addText("底把", -76, -372, 0xaeb9c9);
+  addText("击针尖", -62, -346, 0xe8edf5);
+  addText("击针簧", -42, spInfo.yBot + 32, COL.amber);
+  addText("阻铁", C.searP.x + 22, C.searP.y + 26, COL.sear);
+  addText("扳机", C.trigP.x + 18, C.trigP.y + 64, COL.trig);
+}
+
+/* ============ 高亮 ============ */
+function noseWorld() {
+  const lx = 10, ly = -74, a = -ssCache.alpha * Math.PI / 180;
+  return {
+    x: C.searP.x + lx * Math.cos(a) - ly * Math.sin(a),
+    y: C.searP.y + lx * Math.sin(a) + ly * Math.cos(a),
+  };
+}
+function drawHighlights(geom, ss) {
+  const g = gHi;
+  const pulse = 0.55 + 0.45 * Math.sin(performance.now() / 240);
+  const atLimit = state.travel >= C.xLim - 0.5;
+
+  if (atLimit) {
+    const y = C.flangeY + C.flangeH + state.travel;              // 凸缘底面世界 y
+    g.lineStyle(3.2, COL.red, pulse);
+    g.moveTo(C.flangeX, y).lineTo(C.ledgeX + C.ledgeW, y);       // 接触线段
+    g.lineStyle(2.4, COL.red, pulse);
+    g.drawRoundedRect(C.flangeX - 6, y - 14, 32, 30, 6);
+    g.drawRoundedRect(C.ledgeX + C.ledgeW - 18, y - 4, 26, C.ledgeH + 8, 5);
+    addText("干涉:尾部已抵限位面", C.flangeX - 78, y + 42, COL.red);
+    if (state.cut && state.xCut > C.flangeX - 8 && state.xCut < C.ledgeX + C.ledgeW + 2) {
+      g.lineStyle(5, 0xffb3b3, 0.95);
+      g.moveTo(state.xCut - 2.2, y).lineTo(state.xCut + 2.2, y);
+      addText("接触线", state.xCut + 8, y - 16, 0xffb3b3, 11);
+    }
+  }
+
+  if (ss.blocked) {
+    const n = noseWorld();
+    g.lineStyle(2.2, COL.red, pulse);
+    g.drawCircle(n.x, n.y, 13 + pulse * 2);
+    addText("压缩不足 · 阻铁锁止", n.x - 104, n.y - 32, COL.red);
+  } else if (ss.atCock && !ss.canRelease && state.travel < C.xLim - 1) {
+    const n = noseWorld();
+    g.lineStyle(1.8, COL.green, 0.85);
+    g.drawCircle(n.x, n.y, 12);
+  }
+}
+
+/* ============ 命中区(显式 hitArea,与像素 alpha 无关) ============ */
+function buildHits(geom, spInfo) {
+  // 底把(仅分解态可拖)
+  H.frame.c.hitArea = new PIXI.Rectangle(0, -380, 161, 764);
+  H.frame.c.position.copyFrom(P_frame.solid.position);
+  H.frame.c.visible = state.mode === "exploded";
+
+  // 击针(局部坐标,容器随 travel 移动)
+  H.striker.c.hitArea = new PIXI.Rectangle(-28, C.rodTop - 6, 56, 580);
+  H.striker.c.position.copyFrom(P_striker.solid.position);
+
+  // 弹簧
+  H.spring.c.hitArea = new PIXI.Rectangle(
+    -spInfo.r - 6, spInfo.yTop, spInfo.r * 2 + 12, spInfo.yBot - spInfo.yTop + 10);
+  H.spring.c.position.copyFrom(P_spring.solid.position);
+  H.spring.c.visible = true;
+
+  // 阻铁 / 扳机(枢点容器,圆形命中)
+  H.sear.c.hitArea = new PIXI.Circle(0, 0, 44);
+  H.sear.c.position.copyFrom(P_sear.solid.position);
+  H.trigger.c.hitArea = new PIXI.Circle(0, 0, 58);
+  H.trigger.c.position.copyFrom(P_trig.solid.position);
+
+  // 剖切刀
+  H.cut.c.hitArea = state.cut ? new PIXI.Rectangle(state.xCut - 14, -445, 28, 905) : null;
+  H.cut.c.visible = state.cut;
+}
+
+function beginDrag(name, e) {
+  viewport.plugins.pause("drag");
+  const w = viewport.toWorld(e.global.x, e.global.y);
+  drag = {
+    name, wx: w.x, wy: w.y,
+    travel: state.travel, beta: state.beta,
+    off: JSON.parse(JSON.stringify(state.exploded[name] || { x: 0, y: 0 })),
+  };
+  app.view.style.cursor = "grabbing";
+}
+viewport.interactive = true;
+viewport.on("pointermove", (e) => {
+  if (!drag) return;
+  const w = viewport.toWorld(e.global.x, e.global.y);
+  const name = drag.name;
+  if (state.mode === "exploded" && name !== "cut") {
+    state.exploded[name].x = drag.off.x + (w.x - drag.wx);
+    state.exploded[name].y = drag.off.y + (w.y - drag.wy);
+    return;
+  }
+  if (name === "cut") { state.xCut = Math.max(-380, Math.min(300, w.x)); return; }
+  if (name === "striker") {
+    state.tween = null;
+    state.travel = Math.max(-8, Math.min(C.xLim, drag.travel + (w.y - drag.wy)));
+    return;
+  }
+  if (name === "trigger" || name === "sear") {
+    // 带符号角增量:用前后两向量的叉积/点积求 atan2,跨象限也稳定
+    const px = drag.wx - C.trigP.x, py = drag.wy - C.trigP.y;
+    const cx = w.x - C.trigP.x, cy = w.y - C.trigP.y;
+    const cross = px * cy - py * cx;          // 叉积(带符号 sin)
+    const dot = px * cx + py * cy;            // 点积(cos)
+    const dAngle = Math.atan2(cross, dot) * 180 / Math.PI;
+    // 屏幕 y 向下:绕枢点顺时针移动即扣扳机,对应叉积符号直接作为 β 增量
+    state.beta = Math.max(0, Math.min(C.betaMax, drag.beta + dAngle));
+  }
+});
+addEventListener("pointerup", () => {
+  if (drag) { drag = null; viewport.plugins.resume("drag"); app.view.style.cursor = "default"; }
+});
+
+/* ============ 击发(弹簧向上推,行程减小) ============ */
+function tryFire() {
+  const ss = ssCache;
+  if (state.mode === "exploded") return flashWarn("分解模式下不能击发,请先重新装配。");
+  if (state.travel < C.xCock - 2)
+    return flashWarn("压缩量不足,未形成待击,无法击发。");
+  if (!ss.canRelease)
+    return flashWarn(`阻铁尚未让位:还差 ${Math.max(0, C.alphaRel - ss.alpha).toFixed(1)}°(扳机还差 ${Math.max(0, C.betaRel - state.beta).toFixed(1)}°)。`);
+  state.firing = true; state.fireV = 0;
+}
+function fireStep(dt) {
+  const geom = springGeom(), m = 0.09;
+  state.fireV -= (geom.F / m) / 1000 * dt;             // 簧力方向:行程减小
+  state.travel += state.fireV * dt;
+  state.fireV *= 0.994;
+  if (state.travel <= 0) {
+    state.travel = 0;
+    if (Math.abs(state.fireV) > 60) state.fireV = -state.fireV * 0.16;
+    else { state.fireV = 0; state.firing = false; }
+  }
+  if (state.travel > C.xLim) state.travel = C.xLim;
+}
+
+/* ============ 面板 ============ */
+const $ = (id) => document.getElementById(id);
+const refs = {};
+["travel","len","comp","solid","margin","diam","pitch","force","beta","alpha","seargo","triggo"]
+  .forEach(k => refs[k] = $("r-" + k));
+let warnTimer = null;
+function flashWarn(msg) {
+  const el = $("warnline");
+  el.style.display = "block"; el.textContent = "⚠ " + msg;
+  clearTimeout(warnTimer);
+  warnTimer = setTimeout(() => { el.style.display = "none"; warnTimer = null; }, 3400);
+}
+function updatePanel(geom, ss) {
+  refs.travel.textContent = state.travel.toFixed(1) + " mm";
+  refs.len.textContent = geom.L.toFixed(1) + " mm";
+  refs.comp.textContent = geom.comp.toFixed(1) + " mm";
+  refs.solid.textContent = geom.Ls.toFixed(1) + " mm";
+  refs.margin.textContent = geom.margin.toFixed(1) + " mm";
+  refs.diam.textContent = `${geom.D.toFixed(2)} mm(真实胀 ${geom.swellPct.toFixed(2)}%)`;
+  refs.pitch.textContent = geom.p.toFixed(2) + " mm";
+  refs.force.textContent = `${geom.F.toFixed(1)} N(k=${geom.k.toFixed(3)} N/mm)`;
+  refs.beta.textContent = state.beta.toFixed(1) + "°";
+  refs.alpha.textContent = ss.alpha.toFixed(1) + "°";
+  refs.seargo.textContent = ss.blocked
+    ? "锁止中"
+    : Math.max(0, C.alphaRel - ss.alpha).toFixed(1) + "°";
+  refs.triggo.textContent = ss.blocked
+    ? "锁止中"
+    : Math.max(0, C.betaRel - state.beta).toFixed(1) + "°";
+
+  const st = $("status");
+  let txt = "自由状态", cls = "";
+  if (state.firing) { txt = "击发中 …"; cls = "s-fire"; }
+  else if (state.travel >= C.xLim - 0.5) { txt = "已抵限位面(尾部干涉)"; cls = "s-limit"; }
+  else if (ss.blocked) { txt = "压缩不足 · 阻铁锁止"; cls = "s-block"; }
+  else if (ss.canRelease) { txt = "阻铁让位 → 可击发"; cls = "s-fire"; }
+  else if (ss.atCock) { txt = "待击(阻铁扣合)"; cls = "s-cock"; }
+  else if (state.travel > 1) txt = "压缩中(未达待击)";
+  st.textContent = txt; st.className = "status " + cls;
+
+  const w = $("warnline");
+  if (geom.xSolid < C.xCock + 2 && !warnTimer) {
+    w.style.display = "block";
+    w.textContent = "⚠ 当前并紧长度过大:弹簧并紧先于待击,机构无法完成待击(减小 n 或 d)。";
+  } else if (!warnTimer) w.style.display = "none";
+}
+
+/* ============ 控件 ============ */
+$("s-n").oninput = (e) => { params.n = +e.target.value; $("v-n").textContent = params.n; };
+$("s-d").oninput = (e) => { params.d = +e.target.value; $("v-d").textContent = params.d.toFixed(1); };
+$("s-d0").oninput = (e) => { params.D0 = +e.target.value; $("v-d0").textContent = params.D0; };
+$("s-g").oninput = (e) => { params.G = +e.target.value; $("v-g").textContent = params.G; };
+
+$("b-reset").onclick = () => {
+  state.travel = 0; state.beta = 0; state.firing = false; state.fireV = 0; state.tween = null;
+  state.mode = "normal"; $("b-explode").textContent = "分解观察";
+};
+$("b-nearsolid").onclick = () => {
+  const geom = springGeom();
+  if (geom.xSolid < C.xCock + 2) return flashWarn("当前参数下并紧先于待击,无法预置接近并紧装配。");
+  state.tween = { from: state.travel, to: C.xLim - 2, t: 0, dur: 1.5 };
+  state.mode = "normal"; $("b-explode").textContent = "分解观察";
+};
+$("b-fire").onclick = tryFire;
+$("b-cut").onclick = () => {
+  state.cut = !state.cut;
+  $("b-cut").textContent = state.cut ? "关闭剖切" : "启用剖切";
+  if (!state.cut) tiling.visible = false;
+};
+$("b-explode").onclick = () => {
+  state.mode = state.mode === "exploded" ? "normal" : "exploded";
+  state.firing = false;
+  $("b-explode").textContent = state.mode === "exploded" ? "重新装配" : "分解观察";
+};
+$("b-fit").onclick = () => viewport.animate({ time: 500, scale: 1.12, position: { x: 0, y: -10 } });
+
+/* ============ 主循环 ============ */
+app.ticker.add((dt) => {
+  const dts = dt / 60;
+  if (state.tween) {
+    state.tween.t += dts / state.tween.dur;
+    const k = Math.min(1, state.tween.t);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    state.travel = state.tween.from + (state.tween.to - state.tween.from) * e;
+    if (k >= 1) state.tween = null;
+  }
+  if (state.firing) fireStep(dts);
+  render();
+});
+
+})();
+</script>
+</body>
+</html>
