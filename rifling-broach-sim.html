@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>拉刀法膛线加工仿真</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric/5.3.0/fabric.min.js"></script>
+<style>
+  :root{
+    --bg:#0b111c; --panel:#121b2b; --panel2:#0f1827; --line:#22324c;
+    --fg:#e2e8f0; --dim:#8aa0bd; --accent:#38bdf8; --deep:#1d4ed8;
+    --ok:#34d399; --warn:#fbbf24; --bad:#ef4444; --amber:#fb923c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:radial-gradient(1200px 700px at 70% -10%,#16233b 0%,var(--bg) 60%);color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:14px}
+  body{padding:18px max(16px,env(safe-area-inset-right,0px)) 30px max(16px,env(safe-area-inset-left,0px))}
+  .wrap{max-width:1480px;margin:0 auto}
+  h1{font-size:20px;margin:2px 0 4px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:12.5px;margin-bottom:14px}
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+  @media (max-width:1080px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:14px;padding:14px 14px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .card h2{font-size:13.5px;margin:0 0 10px;color:var(--accent);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+  .canvas-host{width:100%;overflow-x:auto}
+  .canvas-host canvas{max-width:100%;height:auto!important;touch-action:none}
+  .side{display:flex;flex-direction:column;gap:16px}
+  .pill{font-size:11.5px;padding:3px 9px;border-radius:999px;font-weight:600}
+  .pill.ok{background:rgba(52,211,153,.15);color:var(--ok);border:1px solid rgba(52,211,153,.4)}
+  .pill.warn{background:rgba(251,191,36,.15);color:var(--warn);border:1px solid rgba(251,191,36,.45)}
+  .pill.bad{background:rgba(239,68,68,.16);color:#fca5a5;border:1px solid rgba(239,68,68,.5)}
+  .pill.info{background:rgba(56,189,248,.14);color:var(--accent);border:1px solid rgba(56,189,248,.4)}
+  #banner{margin:0 0 12px;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;display:none;align-items:center;gap:10px}
+  #banner.show{display:flex}
+  #banner.ok{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);color:#a7f3d0}
+  #banner.warn{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.4);color:#fde68a}
+  #banner.bad{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.5);color:#fecaca}
+  .readouts{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px;margin-top:4px}
+  .ro{background:#0c1525;border:1px solid var(--line);border-radius:9px;padding:7px 9px}
+  .ro .k{font-size:11px;color:var(--dim)}
+  .ro .v{font-size:15px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+  .ro.full{grid-column:1/-1}
+  .controls{margin-top:16px}
+  .ctl-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+  .ctl-row:last-child{margin-bottom:0}
+  button{background:#17243b;color:var(--fg);border:1px solid var(--line);border-radius:9px;padding:8px 13px;
+    font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+  button:hover{background:#1d2f4d;border-color:#3b5a86}
+  button.primary{background:#075985;border-color:#0e7490}
+  button.primary:hover{background:#0e7490}
+  button.tight{background:#7c2d12;border-color:#c2410c}
+  button.tight:hover{background:#9a3412}
+  input[type=range]{flex:1;min-width:180px;accent-color:var(--accent);height:22px}
+  input[type=range].small{flex:0 1 220px}
+  select{background:#17243b;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px}
+  label.fld{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:12.5px}
+  .val{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;min-width:64px;display:inline-block}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:12px;color:var(--dim)}
+  .legend i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .notes{margin-top:14px;font-size:12px;color:var(--dim);line-height:1.75}
+  .notes code{color:#7dd3fc;background:#0c1525;padding:1px 6px;border-radius:5px;border:1px solid var(--line)}
+  .broach-svg{width:100%;height:auto;display:block}
+  .seg-title{font-size:11.5px;color:var(--dim);margin:8px 0 2px}
+  .seg-title b{color:var(--fg)}
+  .hint{font-size:11px;color:var(--dim);margin-top:6px}
+  .tooth-label{font-size:10px;fill:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>拉刀法膛线加工仿真 <span class="pill info">枪管内壁展开 + 管口随动视图</span></h1>
+  <div class="sub">梯形刀齿逐齿升量切削 · 分度成形多条螺旋膛线 · 缠距驱动斜线斜率与螺旋角 · 实时干涉判定</div>
+
+  <div id="banner"></div>
+
+  <div class="grid">
+    <!-- 左:展开图 -->
+    <div class="card">
+      <h2>① 枪管内壁展开图(横轴:轴向位置 mm / 纵轴:周向展开 mm)
+        <span id="statusPill" class="pill ok">待切削</span>
+      </h2>
+      <div class="canvas-host"><canvas id="mainCanvas" width="1020" height="600"></canvas></div>
+      <div class="legend">
+        <span><i style="background:#38bdf8"></i>浅:初切齿槽</span>
+        <span><i style="background:#1d4ed8"></i>深:终切齿槽</span>
+        <span><i style="background:rgba(239,68,68,.55)"></i>干涉重叠区</span>
+        <span><i style="background:#fbbf24;border-radius:50%;width:10px;height:10px"></i>斜线×分度线交点(干涉时点亮)</span>
+        <span><i style="background:#fb923c"></i>拉刀当前轴向位置</span>
+      </div>
+    </div>
+
+    <!-- 右:管口 + 拉刀 + 数据 -->
+    <div class="side">
+      <div class="card">
+        <h2>② 管口小窗(随拉刀推进同步旋转)
+          <span class="pill info" id="phiPill">φ 0°</span>
+        </h2>
+        <div class="canvas-host" style="text-align:center"><canvas id="muzzleCanvas" width="340" height="340"></canvas></div>
+        <div class="hint">可在管口图上按住拖动手动检视角度,<button id="resetView" style="padding:2px 8px;font-size:11px">视角复位</button></div>
+      </div>
+
+      <div class="card">
+        <h2>③ 拉刀刀齿(梯形,升量 0.15 mm/齿)</h2>
+        <div id="broachHost"></div>
+        <div class="seg-title">当前分度:第 <b id="gInfo">1</b> / <b id="gnInfo">6</b> 条膛线 · 第 <b id="tInfo">1</b> / 8 齿 · 本齿槽深 <b id="dInfo">0.15</b> mm</div>
+      </div>
+
+      <div class="card">
+        <h2>④ 几何量实时读数</h2>
+        <div class="readouts">
+          <div class="ro"><div class="k">缠距 T(一转轴向行程)</div><div class="v"><span id="rT">300</span> mm</div></div>
+          <div class="ro"><div class="k">螺旋角 α = atan(πD/T)</div><div class="v"><span id="rAlpha">11.8</span>°</div></div>
+          <div class="ro"><div class="k">槽数 N / 分度角 β</div><div class="v"><span id="rN">6</span> / <span id="rBeta">60.0</span>°</div></div>
+          <div class="ro"><div class="k">周向节距 p = πD/N</div><div class="v"><span id="rPitch">10.47</span> mm</div></div>
+          <div class="ro"><div class="k">当前槽法向宽 / 周向有效宽</div><div class="v"><span id="rW">6.00</span> / <span id="rBeff">6.13</span> mm</div></div>
+          <div class="ro"><div class="k">最小陆地宽(相邻槽间)</div><div class="v"><span id="rLand">—</span> mm</div></div>
+          <div class="ro full"><div class="k">判定</div><div class="v" id="rVerdict" style="font-size:13.5px">—</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 控制区 -->
+  <div class="card controls">
+    <div class="ctl-row">
+      <button id="firstBtn">⏮ 首刀</button>
+      <button id="prevBtn">◀ 上一刀</button>
+      <button id="playBtn" class="primary">▶ 播放</button>
+      <button id="nextBtn">下一刀 ▶</button>
+      <button id="lastBtn">末刀 ⏭</button>
+      <input type="range" id="timeline" min="0" max="47" value="0">
+      <span class="val" id="stepVal">第 1 / 48 刀</span>
+    </div>
+    <div class="ctl-row">
+      <label class="fld">缠距 T
+        <input type="range" class="small" id="twistSlider" min="80" max="500" step="1" value="300">
+        <span class="val"><span id="twistVal">300</span> mm</span>
+      </label>
+      <label class="fld">槽数 N
+        <select id="nSelect">
+          <option value="4">4 条</option>
+          <option value="6" selected>6 条</option>
+          <option value="8">8 条</option>
+        </select>
+      </label>
+      <label class="fld">播放速度
+        <select id="speedSelect">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+      <button id="stdPreset">标准刀位 T=300</button>
+      <button id="tightPreset" class="tight">预置:缠距偏紧刀位 T=90</button>
+      <button id="firstInterfBtn">跳转到首次干涉</button>
+    </div>
+    <div class="notes">
+      模型说明:内径 D=20 mm,展开周长 C=πD≈62.83 mm,展示段长 L=240 mm;每条膛线由 M=8 个梯形刀齿逐齿切成,每齿升量 0.15 mm,终切深 1.20 mm,法向槽宽随齿次由 6.00 mm 展到 8.80 mm。
+      展开图上槽中心线为直线,斜率 <code>dy/dx = C/T</code>,与管口螺旋角 <code>α = atan(C/T)</code> 同步;螺旋槽的周向有效宽 <code>b = w/cosα</code>,缠距越紧 α 越大、周向占位越宽。
+      分度角 β=360°/N 与节距 p=C/N 必须容下槽宽:相邻槽半宽之和超过 p 即判<span style="color:#fca5a5">干涉</span>,红色区域先出现、随刀齿展宽而扩大,同时斜线与分度线的交点点亮。时间轴可拖回任意一刀,管口视图随动转到该刀对应转角。
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ---------------- 常量与状态 ---------------- */
+const CFG = { D:20, L:240, M:8, RISE:0.15, W0:6.0, W1:8.8, SIDE:15*Math.PI/180, DEPTH_GAIN:1.6 };
+const C = Math.PI * CFG.D;                 // 展开周长 mm
+const state = { T:300, N:6, step:0, viewRot:0, playing:false, speed:1 };
+
+const totalSteps = () => state.N * CFG.M;
+const activeG   = () => Math.floor(state.step / CFG.M);
+const activeT   = () => (state.step % CFG.M) + 1;
+const broachX   = () => CFG.L * (state.step + 1) / totalSteps();
+const alpha     = () => Math.atan(C / state.T);          // 螺旋角(展开角)
+const slope     = () => C / state.T;                    // dy/dx
+const pitch     = () => C / state.N;                    // 周向节距
+const wAt       = t => CFG.W0 + (CFG.W1 - CFG.W0) * (t - 1) / (CFG.M - 1);
+const bEff      = t => wAt(t) / Math.cos(alpha());      // 周向有效槽宽
+const depthOf   = t => t * CFG.RISE;
+const stageOf   = g => g < activeG() ? CFG.M : (g === activeG() ? activeT() : 0);
+const modC      = v => ((v % C) + C) % C;
+
+/* 颜色:齿次越深蓝 */
+function mixColor(t){
+  const k = (t - 1) / (CFG.M - 1);
+  const a = [125,211,252], b = [29,78,216];
+  const r = Math.round(a[0]+(b[0]-a[0])*k), g = Math.round(a[1]+(b[1]-a[1])*k), bl = Math.round(a[2]+(b[2]-a[2])*k);
+  return `rgb(${r},${g},${bl})`;
+}
+
+/* ---------------- Fabric 画布 ---------------- */
+const mainCanvas = new fabric.Canvas('mainCanvas', {selection:false, backgroundColor:'#0d1626', renderOnAddRemove:false});
+const muzzleCanvas = new fabric.Canvas('muzzleCanvas', {selection:false, backgroundColor:'#0d1626', renderOnAddRemove:false});
+
+const ML=78, MR=30, MT=64, MB=66, MW=1020, MH=600;
+const px = x => ML + x * (MW-ML-MR) / CFG.L;
+const py = y => MT + y * (MH-MT-MB) / C;
+const surf = () => ({x:px(0), y:py(0), w:px(CFG.L)-px(0), h:py(C)-py(0)});
+
+let interferencePairs = [];   // 供交点点亮判定
+let pulse = 0;
+
+/* ---------------- 展开图 ---------------- */
+function renderUnwrapped(){
+  const c = mainCanvas;
+  c.clear(); c.backgroundColor = '#0d1626';
+  const s = surf();
+  const m = slope(), xb = broachX(), p = pitch(), ang = alpha();
+  const screenAng = Math.atan2(py(m*30)-py(0), px(30)-px(0)) * 180/Math.PI;
+
+  /* 表面底色 */
+  c.add(new fabric.Rect({left:s.x, top:s.y, width:s.w, height:s.h, fill:'#101d31', stroke:'#33507a', strokeWidth:1, selectable:false}));
+
+  /* 网格:轴向每 30mm */
+  for(let x=0; x<=CFG.L+0.01; x+=30){
+    c.add(new fabric.Line([px(x), s.y, px(x), s.y+s.h], {stroke:'#1b2c46', strokeWidth:1, selectable:false}));
+    c.add(new fabric.Text(x+'', {left:px(x), top:s.y+s.h+8, fontSize:11, fill:'#8aa0bd', originX:'center', selectable:false}));
+  }
+  c.add(new fabric.Text('轴向 x / mm', {left:s.x+s.w/2, top:s.y+s.h+30, fontSize:12, fill:'#8aa0bd', originX:'center', selectable:false}));
+
+  /* 分度线(周向)y = k·p */
+  for(let k=0; k<=state.N; k++){
+    const y = k*p;
+    c.add(new fabric.Line([s.x, py(y), s.x+s.w, py(y)], {stroke: k===0||k===state.N ? '#3b5a86' : '#2a4062', strokeWidth:1, strokeDashArray:[6,5], selectable:false}));
+    c.add(new fabric.Text((k*360/state.N)+'°', {left:s.x-10, top:py(y), fontSize:11, fill:'#9db8d8', originX:'right', originY:'center', selectable:false}));
+  }
+  c.add(new fabric.Text('周向展开 / (°)', {left:18, top:s.y+s.h/2, fontSize:12, fill:'#8aa0bd', originY:'center', angle:-90, selectable:false}));
+
+  /* 标题注记 */
+  c.add(new fabric.Text(`缠距 T=${state.T} mm  ·  螺旋角 α=${(ang*180/Math.PI).toFixed(1)}°  ·  斜率 dy/dx=C/T=${m.toFixed(3)}`,
+    {left:s.x, top:18, fontSize:13, fill:'#7dd3fc', selectable:false}));
+
+  /* ---- 裁剪组:所有槽带、干涉带、交点都限制在表面内 ---- */
+  const clip = new fabric.Rect({left:s.x, top:s.y, width:s.w, height:s.h, absolutePositioned:true});
+  const grp = [];
+  const K = Math.ceil(CFG.L/state.T) + 2;
+
+  /* 槽带(平行四边形),考虑周向卷绕,复制 ±K 份 */
+  for(let g=0; g<state.N; g++){
+    const t = stageOf(g);
+    if(t === 0) continue;
+    const hb = bEff(t)/2, col = mixColor(t);
+    for(let k=-K; k<=K; k++){
+      const y0 = g*p + k*C;
+      grp.push(new fabric.Polygon([
+        {x:px(0),  y:py(y0-hb)},
+        {x:px(0),  y:py(y0+hb)},
+        {x:px(xb), y:py(y0+hb+m*xb)},
+        {x:px(xb), y:py(y0-hb+m*xb)}
+      ], {fill:col, fillOpacity:0.30+0.5*(t/CFG.M), stroke:col, strokeWidth:1.2, selectable:false}));
+    }
+    /* 槽中心线(点划线) */
+    for(let k=-K; k<=K; k++){
+      const y0 = g*p + k*C;
+      grp.push(new fabric.Line([px(0), py(y0), px(xb), py(y0+m*xb)],
+        {stroke:'#bae6fd', strokeWidth:1, strokeDashArray:[2,4], opacity:.75, selectable:false}));
+    }
+  }
+
+  /* 干涉判定:相邻槽半宽之和 > 节距 */
+  interferencePairs = [];
+  for(let g=0; g<state.N; g++){
+    const g2 = (g+1) % state.N;
+    const t1 = stageOf(g), t2 = stageOf(g2);
+    if(t1===0 || t2===0) continue;
+    const ov = (bEff(t1)+bEff(t2))/2 - p;
+    if(ov > 0){
+      interferencePairs.push({g, g2, ov, half:ov/2, center0:(g+0.5)*p});
+      for(let k=-K; k<=K; k++){
+        const y0 = (g+0.5)*p + k*C;
+        grp.push(new fabric.Polygon([
+          {x:px(0),  y:py(y0-ov/2)},
+          {x:px(0),  y:py(y0+ov/2)},
+          {x:px(xb), y:py(y0+ov/2+m*xb)},
+          {x:px(xb), y:py(y0-ov/2+m*xb)}
+        ], {fill:'#ef4444', fillOpacity:0.28+0.35*pulse, stroke:'#f87171', strokeWidth:1.4, strokeDashArray:[7,4], selectable:false}));
+      }
+      const lx = Math.min(xb, CFG.L*0.55);
+      grp.push(new fabric.Text('干涉 +'+ov.toFixed(2)+'mm', {
+        left:px(lx), top:py(modC((g+0.5)*p+m*lx)), fontSize:12, fontWeight:'bold',
+        fill:'#fecaca', angle:screenAng, originY:'center', shadow:new fabric.Shadow({color:'rgba(239,68,68,.9)', blur:8+10*pulse}), selectable:false}));
+    }
+  }
+
+  /* 交点:槽边斜线 × 分度线 */
+  const inOverlap = (x,y) => interferencePairs.some(pr => {
+    let d = y - (pr.center0 + m*x);
+    d -= C*Math.round(d/C);
+    return Math.abs(d) <= pr.half + 1e-6;
+  });
+  for(let g=0; g<state.N; g++){
+    const t = stageOf(g);
+    if(t === 0) continue;
+    const hb = bEff(t)/2;
+    for(const e of [-1, 1]){                 // 两条槽边
+      for(let j=0; j<=state.N; j++){
+        for(let k=-K; k<=K; k++){
+          const yLine = j*p + k*C;
+          const x = (yLine - g*p - e*hb) / m;
+          if(x > 0.5 && x < xb - 0.3){
+            const hot = inOverlap(x, modC(g*p+m*x+e*hb));
+            grp.push(new fabric.Circle({
+              left:px(x), top:py(yLine), radius: hot ? 5+3*pulse : 3,
+              originX:'center', originY:'center',
+              fill: hot ? '#fca5a5' : '#fde68a',
+              opacity: hot ? 1 : .8,
+              shadow: hot ? new fabric.Shadow({color:'rgba(239,68,68,1)', blur:14+12*pulse}) : null,
+              selectable:false
+            }));
+          }
+        }
+      }
+    }
+  }
+
+  const group = new fabric.Group(grp, {clipPath:clip, selectable:false});
+  c.add(group);
+
+  /* 拉刀轴向位置游标 */
+  c.add(new fabric.Line([px(xb), s.y-4, px(xb), s.y+s.h+4], {stroke:'#fb923c', strokeWidth:2.2, selectable:false}));
+  c.add(new fabric.Polygon([
+    {x:px(xb), y:s.y-16},{x:px(xb)-7, y:s.y-5},{x:px(xb)+7, y:s.y-5}
+  ], {fill:'#fb923c', selectable:false}));
+  c.add(new fabric.Text('拉刀 x='+xb.toFixed(1)+'mm', {left:px(xb), top:s.y-26, fontSize:11.5, fill:'#fdba74', originX:'center', selectable:false}));
+
+  /* 螺旋角注解三角形 */
+  const ax = 26, adx = 40;
+  const p0={x:px(ax), y:py(C*0.90)}, p1={x:px(ax+adx), y:py(C*0.90)}, p2={x:px(ax+adx), y:py(C*0.90 - m*adx)};
+  c.add(new fabric.Line([p0.x,p0.y,p1.x,p1.y], {stroke:'#7dd3fc', strokeWidth:1.5, selectable:false}));
+  c.add(new fabric.Line([p1.x,p1.y,p2.x,p2.y], {stroke:'#7dd3fc', strokeWidth:1.5, strokeDashArray:[4,3], selectable:false}));
+  c.add(new fabric.Line([p0.x,p0.y,p2.x,p2.y], {stroke:'#7dd3fc', strokeWidth:2, selectable:false}));
+  c.add(new fabric.Text('α='+(ang*180/Math.PI).toFixed(1)+'°', {left:p0.x+6, top:p0.y-4, fontSize:12, fill:'#7dd3fc', selectable:false}));
+
+  c.requestRenderAll();
+}
+
+/* ---------------- 管口视图 ---------------- */
+function arcPts(cx, cy, r, a0, a1, seg){
+  const out=[];
+  for(let i=0;i<=seg;i++){
+    const a = a0 + (a1-a0)*i/seg;
+    out.push({x:cx+r*Math.cos(a), y:cy+r*Math.sin(a)});
+  }
+  return out;
+}
+function renderMuzzle(){
+  const c = muzzleCanvas;
+  c.clear(); c.backgroundColor = '#0d1626';
+  const cx=170, cy=170, R=118, Rmm=CFG.D/2, sc=R/Rmm;
+  const phi = 360*broachX()/state.T + state.viewRot;
+  const p = pitch();
+
+  /* 静止层:外筒、内孔基准、0°基准刻线 */
+  c.add(new fabric.Circle({left:cx-R-14, top:cy-R-14, radius:R+14, fill:'#16233a', stroke:'#33507a', strokeWidth:2, selectable:false}));
+  c.add(new fabric.Circle({left:cx-R, top:cy-R, radius:R, fill:'#0a1220', stroke:'#47658f', strokeWidth:2, selectable:false}));
+  c.add(new fabric.Line([cx, cy-R-14, cx, cy-R-4], {stroke:'#9db8d8', strokeWidth:2, selectable:false}));
+  c.add(new fabric.Text('0°基准', {left:cx, top:cy-R-30, fontSize:11, fill:'#9db8d8', originX:'center', selectable:false}));
+  c.add(new fabric.Line([cx-7,cy,cx+7,cy],{stroke:'#263b58',strokeWidth:1,selectable:false}));
+  c.add(new fabric.Line([cx,cy-7,cx,cy+7],{stroke:'#263b58',strokeWidth:1,selectable:false}));
+
+  /* 旋转层:梯形槽口 + 参考辐条 + 螺旋线 */
+  const rot = [];
+  for(let g=0; g<state.N; g++){
+    const t = stageOf(g);
+    if(t === 0) continue;
+    const theta = g*2*Math.PI/state.N;
+    const go = (bEff(t)/2)/Rmm;
+    const wInner = Math.max(0.6, (wAt(t) - 2*depthOf(t)*Math.tan(CFG.SIDE))/Math.cos(alpha()));
+    const gi = Math.min(go-0.02, (wInner/2)/Rmm);
+    const rIn = R - depthOf(t)*CFG.DEPTH_GAIN*sc;
+    const outer = arcPts(0,0,R, theta-go, theta+go, 7);
+    const inner = arcPts(0,0,rIn, theta+gi, theta-gi, 7);
+    rot.push(new fabric.Polygon(outer.concat(inner), {
+      fill:mixColor(t), fillOpacity:.85, stroke:'#bae6fd', strokeWidth:1, selectable:false}));
+  }
+  /* 参考辐条(随转角旋转) */
+  rot.push(new fabric.Polygon([{x:0,y:-R+6},{x:-6,y:-R+18},{x:6,y:-R+18}], {fill:'#fb923c', selectable:false}));
+  /* 单圈螺旋示意线 */
+  const sp=[];
+  for(let i=0;i<=72;i++){
+    const th = 2*Math.PI*i/72, r = R*(0.22+0.60*i/72);
+    sp.push({x:r*Math.cos(th), y:r*Math.sin(th)});
+  }
+  rot.push(new fabric.Polyline(sp, {fill:null, stroke:'rgba(125,211,252,.5)', strokeWidth:1.4, strokeDashArray:[4,4], selectable:false}));
+
+  const grp = new fabric.Group(rot, {left:cx, top:cy, originX:'center', originY:'center', angle:phi, selectable:false});
+  c.add(grp);
+
+  /* 中心帽 */
+  c.add(new fabric.Circle({left:cx-4,top:cy-4,radius:4,fill:'#47658f',originX:'center',originY:'center',selectable:false}));
+  c.add(new fabric.Text(`α=${(alpha()*180/Math.PI).toFixed(1)}°  β=${(360/state.N).toFixed(1)}°  N=${state.N}`,
+    {left:cx, top:cy+R+22, fontSize:12, fill:'#7dd3fc', originX:'center', selectable:false}));
+  c.add(new fabricText(c, `随动转角 φ=${((360*broachX()/state.T)%360).toFixed(1)}°(含手动检视 ${state.viewRot.toFixed(0)}°)`,
+    cx, cy+R+42, 11, '#8aa0bd'));
+  c.requestRenderAll();
+  document.getElementById('phiPill').textContent = 'φ ' + (phi%360).toFixed(1) + '°';
+}
+function fabricText(c, str, x, y, fs, fill){
+  return new fabric.Text(str, {left:x, top:y, fontSize:fs, fill, originX:'center', selectable:false});
+}
+
+/* ---------------- 拉刀 SVG ---------------- */
+function renderBroach(){
+  const t = activeT(), g = activeG();
+  let teeth = '';
+  const baseY=112, startX=16, gap=34, bw=26, tw=16, scH=62/CFG.M;
+  for(let i=1;i<=CFG.M;i++){
+    const h = i*CFG.RISE*scH, x = startX+(i-1)*gap;
+    const fill = i < t ? '#38bdf8' : i === t ? '#fb923c' : '#334155';
+    const glow = i === t ? 'filter:drop-shadow(0 0 6px rgba(251,146,60,.9))' : '';
+    teeth += `<polygon points="${x},${baseY} ${x+bw},${baseY} ${x+(bw+tw)/2},${baseY-h} ${x+(bw-tw)/2},${baseY-h}"
+       fill="${fill}" stroke="#0c1525" stroke-width="1" style="${glow}"/>
+       <text x="${x+bw/2}" y="${baseY+15}" text-anchor="middle" class="tooth-label">${i}</text>`;
+  }
+  document.getElementById('broachHost').innerHTML =
+    `<svg class="broach-svg" viewBox="0 0 300 140" preserveAspectRatio="xMidYMid meet">
+       <rect x="8" y="${baseY}" width="284" height="20" rx="4" fill="#1e293b" stroke="#47658f"/>
+       <text x="14" y="${baseY+14}" font-size="10" fill="#8aa0bd">刀体</text>
+       <polygon points="292,${baseY+2} 300,${baseY+10} 292,${baseY+18}" fill="#47658f"/>
+       ${teeth}
+       <text x="150" y="136" text-anchor="middle" class="tooth-label">齿号 → 升量逐齿递增(当前齿橙色,已切蓝色,未切灰色)</text>
+     </svg>`;
+  document.getElementById('gInfo').textContent = g+1;
+  document.getElementById('gnInfo').textContent = state.N;
+  document.getElementById('tInfo').textContent = t;
+  document.getElementById('dInfo').textContent = depthOf(t).toFixed(2);
+}
+
+/* ---------------- 读数与判定 ---------------- */
+function computeVerdict(){
+  const p = pitch();
+  let minLand = Infinity, worst = null;
+  for(let g=0; g<state.N; g++){
+    const t1 = stageOf(g), t2 = stageOf((g+1)%state.N);
+    if(t1===0 || t2===0) continue;
+    const land = p - (bEff(t1)+bEff(t2))/2;
+    if(land < minLand){ minLand = land; worst = [g, (g+1)%state.N]; }
+  }
+  return {minLand, worst};
+}
+function renderReadouts(){
+  const {minLand, worst} = computeVerdict();
+  const t = activeT();
+  document.getElementById('rT').textContent = state.T;
+  document.getElementById('rAlpha').textContent = (alpha()*180/Math.PI).toFixed(1);
+  document.getElementById('rN').textContent = state.N;
+  document.getElementById('rBeta').textContent = (360/state.N).toFixed(1);
+  document.getElementById('rPitch').textContent = pitch().toFixed(2);
+  document.getElementById('rW').textContent = wAt(t).toFixed(2);
+  document.getElementById('rBeff').textContent = bEff(t).toFixed(2);
+  document.getElementById('rLand').textContent = isFinite(minLand) ? minLand.toFixed(2) : '—';
+
+  const pill = document.getElementById('statusPill');
+  const banner = document.getElementById('banner');
+  const verdict = document.getElementById('rVerdict');
+  banner.className = ''; banner.classList.add('show');
+  if(!isFinite(minLand)){
+    pill.className='pill info'; pill.textContent='切削进行中';
+    banner.className=''; banner.classList.remove('show');
+    verdict.textContent='首批刀齿尚未切出相邻槽,无干涉数据';
+  } else if(minLand < 0){
+    pill.className='pill bad'; pill.textContent='干涉';
+    banner.classList.add('show','bad');
+    banner.innerHTML = `⚠ 检测到干涉:第 ${worst[0]+1} 条与第 ${worst[1]+1} 条膛线重叠,最大重叠量 ${(-minLand).toFixed(2)} mm —— 分度角 β=${(360/state.N).toFixed(1)}° 已容不下当前槽宽,需加大缠距或减小槽宽/槽数`;
+    verdict.style.color='#fca5a5';
+    verdict.textContent=`干涉:相邻槽重叠 ${(-minLand).toFixed(2)} mm(第 ${worst[0]+1}/${worst[1]+1} 条)`;
+  } else if(minLand < 1.0){
+    pill.className='pill warn'; pill.textContent='逼近极限';
+    banner.classList.add('show','warn');
+    banner.innerHTML = `△ 槽宽逼近极限:最小陆地宽仅剩 ${minLand.toFixed(2)} mm,继续展宽将发生干涉`;
+    verdict.style.color='#fde68a';
+    verdict.textContent=`逼近极限:陆地宽 ${minLand.toFixed(2)} mm`;
+  } else {
+    pill.className='pill ok'; pill.textContent='正常';
+    banner.classList.add('show','ok');
+    banner.innerHTML = `✓ 分度角与槽宽匹配:最小陆地宽 ${minLand.toFixed(2)} mm,相邻槽无重叠`;
+    verdict.style.color='#a7f3d0';
+    verdict.textContent=`正常:陆地宽 ${minLand.toFixed(2)} mm,无干涉`;
+  }
+}
+
+/* ---------------- 总渲染 ---------------- */
+function render(){
+  renderUnwrapped();
+  renderMuzzle();
+  renderBroach();
+  renderReadouts();
+  const tl = document.getElementById('timeline');
+  tl.max = totalSteps()-1;
+  tl.value = state.step;
+  document.getElementById('stepVal').textContent = `第 ${state.step+1} / ${totalSteps()} 刀`;
+  document.getElementById('playBtn').textContent = state.playing ? '⏸ 暂停' : '▶ 播放';
+}
+
+/* ---------------- 播放循环(干涉闪烁时也驱动重绘) ---------------- */
+let lastTs=0, acc=0, dirty=true, lastPulseDraw=0;
+function loop(ts){
+  let need = false;
+  if(state.playing){
+    const dt = lastTs ? (ts-lastTs)/1000 : 0;
+    acc += dt * 3.2 * state.speed;
+    if(acc >= 1){
+      const jump = Math.floor(acc); acc -= jump;
+      state.step = Math.min(totalSteps()-1, state.step + jump);
+      if(state.step >= totalSteps()-1){ state.playing=false; acc=0; }
+      need = true;
+    }
+  } else acc = 0;
+  if(interferencePairs.length > 0){
+    pulse = (Math.sin(ts/260)+1)/2;
+    if(ts - lastPulseDraw > 50){ need = true; lastPulseDraw = ts; }   // 闪烁重绘节流 ~20fps
+  }
+  else pulse = 0;
+  if(dirty){ need = true; dirty = false; }
+  if(need) render();
+  lastTs = ts;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ---------------- 控件 ---------------- */
+const $ = id => document.getElementById(id);
+$('timeline').addEventListener('input', e => { state.playing=false; state.step = +e.target.value; dirty=true; });
+$('playBtn').addEventListener('click', () => {
+  if(state.step >= totalSteps()-1) state.step = 0;
+  state.playing = !state.playing; dirty=true;
+});
+$('firstBtn').addEventListener('click', () => {state.playing=false; state.step=0; dirty=true;});
+$('lastBtn').addEventListener('click', () => {state.playing=false; state.step=totalSteps()-1; dirty=true;});
+$('prevBtn').addEventListener('click', () => {state.playing=false; state.step=Math.max(0,state.step-1); dirty=true;});
+$('nextBtn').addEventListener('click', () => {state.playing=false; state.step=Math.min(totalSteps()-1,state.step+1); dirty=true;});
+
+$('twistSlider').addEventListener('input', e => {
+  state.T = +e.target.value;
+  $('twistVal').textContent = state.T;
+  dirty = true;
+});
+$('nSelect').addEventListener('change', e => {
+  state.N = +e.target.value;
+  state.step = Math.min(state.step, totalSteps()-1);
+  dirty = true;
+});
+$('speedSelect').addEventListener('change', e => state.speed = +e.target.value);
+$('stdPreset').addEventListener('click', () => {
+  state.T=300; $('twistSlider').value=300; $('twistVal').textContent=300;
+  state.playing=false; dirty=true;
+});
+$('tightPreset').addEventListener('click', () => {
+  state.T=90; $('twistSlider').value=90; $('twistVal').textContent=90;
+  state.playing=false; state.step=Math.min(3*CFG.M-1, totalSteps()-1); dirty=true;   // 第24刀:两条相邻槽干涉已扩大,多条分度交点点亮
+});
+$('firstInterfBtn').addEventListener('click', () => {
+  state.T=90; $('twistSlider').value=90; $('twistVal').textContent=90;
+  state.playing=false; state.step=Math.min(2*CFG.M-2, totalSteps()-1); dirty=true;     // 第15刀(槽2第7齿):红色干涉区首次出现
+});
+$('resetView').addEventListener('click', () => {state.viewRot=0; dirty=true;});
+
+/* 管口手动拖动检视 */
+(() => {
+  const el = muzzleCanvas.upperCanvasEl;
+  let dragging=false, lastAng=0;
+  const ang = ev => {
+    const r = el.getBoundingClientRect();
+    return Math.atan2(ev.clientY-(r.top+r.height/2), ev.clientX-(r.left+r.width/2))*180/Math.PI;
+  };
+  el.addEventListener('pointerdown', ev => {dragging=true; lastAng=ang(ev); el.setPointerCapture(ev.pointerId);});
+  el.addEventListener('pointermove', ev => {
+    if(!dragging) return;
+    const a = ang(ev);
+    let d = a-lastAng;
+    if(d>180) d-=360; if(d<-180) d+=360;
+    state.viewRot += d; lastAng = a; dirty=true;
+  });
+  el.addEventListener('pointerup',   () => dragging=false);
+  el.addEventListener('pointercancel',() => dragging=false);
+})();
+
+render();
+</script>
+</body>
+</html>
