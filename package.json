@@ -1,0 +1,19 @@
+{
+  "name": "transfer-flow-walkthrough",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "原生 TypeScript + Web Components + Konva 的换乘流线走查动画",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "konva": "^9.3.22"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^6.4.6"
+  }
+}
