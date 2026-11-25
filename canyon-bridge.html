@@ -1,0 +1,627 @@
+<title>峡谷长桥 · 日照与盲区</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  :root{
+    --bg:#f2f0e9; --panel:#ffffff; --fg:#23252a; --muted:#6a6d75;
+    --accent:#b3541e; --border:#d8d4c8; --chip:#efece2;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171c; --panel:#1d222b; --fg:#e6e2d8; --muted:#9aa0ac;
+      --accent:#e08a4c; --border:#333a46; --chip:#262c37;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171c; --panel:#1d222b; --fg:#e6e2d8; --muted:#9aa0ac;
+    --accent:#e08a4c; --border:#333a46; --chip:#262c37;
+    color-scheme:dark;
+  }
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    padding-left:max(16px, env(safe-area-inset-left, 0px));
+    padding-right:max(16px, env(safe-area-inset-right, 0px));
+    padding-block:14px;
+  }
+  h1{font-size:20px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  #main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}
+  @media (max-width:920px){#main{grid-template-columns:minmax(0,1fr)}}
+  #view{
+    position:relative;height:min(60vh,560px);min-height:360px;
+    border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#0e1218;
+  }
+  #view canvas{display:block;width:100%;height:100%;touch-action:none}
+  #viewHint{
+    position:absolute;left:10px;bottom:8px;font-size:11px;color:#cfd4dc;
+    background:rgba(10,14,20,.55);padding:3px 8px;border-radius:6px;pointer-events:none;
+  }
+  #strips{margin-top:10px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .strip-label{font-size:12px;color:var(--muted);margin:6px 0 4px}
+  .strip-label:first-child{margin-top:0}
+  #bandCanvas{width:100%;height:44px;display:block}
+  #fracCanvas{width:100%;height:120px;display:block}
+  #panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px}
+  #panel h2{font-size:14px;margin:0 0 10px;color:var(--muted);font-weight:600;letter-spacing:.05em}
+  label{font-size:13px;display:block;margin:12px 0 4px}
+  label .val{color:var(--accent);font-weight:600}
+  input[type=range]{width:100%}
+  .row{display:flex;gap:8px}
+  button{
+    flex:1;padding:7px 6px;font-size:13px;border:1px solid var(--border);
+    background:var(--chip);color:var(--fg);border-radius:8px;cursor:pointer;
+  }
+  button.active{border-color:var(--accent);color:var(--accent);font-weight:600}
+  .chk{display:flex;align-items:center;gap:6px;font-size:13px;margin-top:12px}
+  .chk input{width:auto}
+  #stats{
+    margin-top:12px;font-size:13px;line-height:1.7;background:var(--chip);
+    border-radius:8px;padding:8px 10px;white-space:pre-line;
+  }
+  .legend{margin-top:12px;font-size:12px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr;gap:4px 8px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+  .note{margin-top:12px;font-size:11.5px;color:var(--muted);line-height:1.6;border-top:1px solid var(--border);padding-top:8px}
+  #err{
+    display:none;position:fixed;inset:auto 16px 16px 16px;background:#7a1f2b;color:#fff;
+    padding:10px 14px;border-radius:8px;font-size:13px;z-index:99;
+  }
+</style>
+
+<header>
+  <h1>峡谷长桥 · 日照阴影与视线盲区</h1>
+  <p class="sub">three.js 高度图地形 + three-mesh-bvh:阴影与视线共用同一套几何求交</p>
+</header>
+
+<div id="main">
+  <div>
+    <div id="view">
+      <div id="viewHint">拖动旋转 · 滚轮缩放 · Shift+拖动平移 · 点击航点选中</div>
+    </div>
+    <div id="strips">
+      <div class="strip-label">选中航点的日照时间带(6:00–18:00,琥珀色=日照,深色=被遮)</div>
+      <canvas id="bandCanvas"></canvas>
+      <div class="strip-label">桥面覆盖比例:阴影(蓝)/ 盲区(红)/ 阴影∪盲区(紫)——降低航高,观察紫色在某时刻突然跳到连成一片</div>
+      <canvas id="fracCanvas"></canvas>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <h2>控制</h2>
+    <label>时间轴 <span class="val" id="timeLabel">08:00</span></label>
+    <input id="time" type="range" min="6" max="18" step="0.02" value="8">
+    <label>航点(也可在场景中点击)</label>
+    <div class="row">
+      <button id="wpA" class="active">A · 谷底上方</button>
+      <button id="wpB">B · 山脊背侧</button>
+    </div>
+    <label>航高 <span class="val" id="altLabel"></span></label>
+    <input id="alt" type="range" min="5" max="130" step="0.5" value="30">
+    <label class="chk"><input type="checkbox" id="showRays" checked> 显示航点→桥面视线</label>
+    <div id="stats"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:#d9c98c"></i>日照桥面</span>
+      <span><i class="sw" style="background:#33405e"></i>阴影桥面</span>
+      <span><i class="sw" style="background:#e2483a"></i>盲区(日照中)</span>
+      <span><i class="sw" style="background:#6e2430"></i>盲区+阴影</span>
+      <span><i class="sw" style="background:#3fbf5f"></i>通视视线</span>
+      <span><i class="sw" style="background:#e2483a"></i>被挡视线</span>
+    </div>
+    <p class="note">
+      地形为 100×100 简化网格,由内置高度函数生成;桥塔与地形合并后建一棵
+      three-mesh-bvh BVH。太阳遮蔽、航点视线、日照时间带全部用这棵 BVH
+      的 raycastFirst 求交,忽略大气散射。盲区(视线)本身不随时间变,
+      但「阴影 ∪ 盲区」会在某个日照时刻突然连成一片——把航点 B 的航高慢慢降低试试。
+    </p>
+  </aside>
+</div>
+<div id="err"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.4/build/index.module.js"
+  }
+}
+</script>
+
+<script type="module">
+const errBox = document.getElementById('err');
+function showErr(e){
+  errBox.style.display = 'block';
+  errBox.textContent = '加载失败:' + (e && e.message ? e.message : e);
+}
+try{
+  const THREE = await import('three');
+  const { MeshBVH } = await import('three-mesh-bvh');
+  main(THREE, MeshBVH);
+}catch(e){ showErr(e); }
+
+function main(THREE, MeshBVH){
+
+  // ---------------- 确定性噪声 ----------------
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+  function hash2(x,y){const s=Math.sin(x*127.1+y*311.7)*43758.5453123;return s-Math.floor(s);}
+  function vnoise(x,y){
+    const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi;
+    const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+    const a=hash2(xi,yi),b=hash2(xi+1,yi),c=hash2(xi,yi+1),d=hash2(xi+1,yi+1);
+    return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+  }
+  function fbm(x,y){let s=0,amp=0.5,f=1;for(let i=0;i<4;i++){s+=amp*vnoise(x*f,y*f);f*=2.03;amp*=0.5;}return s;}
+
+  // ---------------- 内置高度图(解析函数) ----------------
+  function terrainH(x,z){
+    const ax=Math.abs(x);
+    const ridge=sstep(38,105,ax);                 // 谷底 0 → 山脊 1
+    let h=2+ridge*(50+24*fbm(x*0.012+3.1,z*0.009+1.3));
+    h+=ridge*9*Math.sin(z*0.018+1.7);             // 脊线沿峡谷起伏
+    h+=(1-ridge)*3.0*fbm(x*0.05+9,z*0.05);        // 谷底微地形
+    return h;
+  }
+
+  // ---------------- 场景 ----------------
+  const view=document.getElementById('view');
+  const renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  view.appendChild(renderer.domElement);
+  const scene=new THREE.Scene();
+  const bgColor=new THREE.Color(0x9fc3dd);
+  scene.background=bgColor;
+  const camera=new THREE.PerspectiveCamera(55,1,0.5,3000);
+
+  const hemi=new THREE.HemisphereLight(0xbfd4e6,0x54503f,0.85);
+  scene.add(hemi);
+  const sun=new THREE.DirectionalLight(0xffe6b0,2.2);
+  scene.add(sun); scene.add(sun.target);
+  sun.target.position.set(0,48,0);
+
+  // ---------------- 地形(简化网格) ----------------
+  const WORLD=420,TSEG=100;
+  const terrainGeo=new THREE.PlaneGeometry(WORLD,WORLD,TSEG,TSEG);
+  terrainGeo.rotateX(-Math.PI/2);
+  {
+    const p=terrainGeo.attributes.position;
+    for(let i=0;i<p.count;i++) p.setY(i,terrainH(p.getX(i),p.getZ(i)));
+    terrainGeo.computeVertexNormals();
+  }
+  const vCount=terrainGeo.attributes.position.count;
+  const baseCol=new Float32Array(vCount*3);
+  {
+    const p=terrainGeo.attributes.position;
+    const cLow=[0.55,0.50,0.36],cMid=[0.40,0.45,0.32],cHigh=[0.55,0.54,0.50],cTop=[0.74,0.73,0.69];
+    const tmp=[0,0,0];
+    for(let i=0;i<vCount;i++){
+      const h=p.getY(i);
+      const t1=sstep(4,26,h),t2=sstep(30,60,h),t3=sstep(62,82,h);
+      for(let k=0;k<3;k++){
+        tmp[k]=cLow[k]+(cMid[k]-cLow[k])*t1;
+        tmp[k]=tmp[k]+(cHigh[k]-tmp[k])*t2;
+        tmp[k]=tmp[k]+(cTop[k]-tmp[k])*t3;
+      }
+      const n=0.92+0.16*hash2(i*0.37,i*0.91);
+      baseCol[i*3]=tmp[0]*n; baseCol[i*3+1]=tmp[1]*n; baseCol[i*3+2]=tmp[2]*n;
+    }
+    terrainGeo.setAttribute('color',new THREE.BufferAttribute(baseCol.slice(),3));
+  }
+  const terrain=new THREE.Mesh(terrainGeo,new THREE.MeshLambertMaterial({vertexColors:true}));
+  scene.add(terrain);
+
+  // ---------------- 桥:桥面 + 双桥塔 ----------------
+  const DECK_Y=48,DECK_X0=-112,DECK_X1=112,DECK_W=9;
+  const deckBase=new THREE.Mesh(
+    new THREE.BoxGeometry(DECK_X1-DECK_X0,1.4,DECK_W),
+    new THREE.MeshLambertMaterial({color:0x3a3f46}));
+  deckBase.position.set(0,DECK_Y-0.7,0);
+  scene.add(deckBase);
+
+  const towerMat=new THREE.MeshLambertMaterial({color:0xb8b2a4});
+  const towerGeos=[];
+  for(const tx of [-58,58]){
+    const g=new THREE.BoxGeometry(6,66,6);
+    g.translate(tx,41,0);            // 塔身 y:8 → 74,桥面以上 26m
+    towerGeos.push(g);
+    const m=new THREE.Mesh(g.clone(),towerMat);
+    scene.add(m);
+    const cap=new THREE.Mesh(new THREE.BoxGeometry(9,2.5,8),towerMat);
+    cap.position.set(tx,72.5,0);
+    scene.add(cap);
+  }
+  // 装饰缆索(不参与遮挡)
+  {
+    const pts=[];
+    for(const tx of [-58,58]){
+      pts.push(tx,73,0, tx<0?DECK_X0:0, DECK_Y+0.5,0);
+      pts.push(tx,73,0, tx<0?0:DECK_X1, DECK_Y+0.5,0);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pts),3));
+    scene.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x8a8f98,transparent:true,opacity:0.7})));
+  }
+
+  // 桥面分段(着色单元)
+  const SEG=96,segW=(DECK_X1-DECK_X0)/SEG;
+  const segX=i=>DECK_X0+(i+0.5)*segW;
+  const segMeshes=[];
+  {
+    const g=new THREE.BoxGeometry(segW*0.96,0.55,DECK_W*0.92);
+    for(let i=0;i<SEG;i++){
+      const m=new THREE.Mesh(g,new THREE.MeshLambertMaterial({color:0xd9c98c}));
+      m.position.set(segX(i),DECK_Y+0.28,0);
+      scene.add(m); segMeshes.push(m);
+    }
+  }
+
+  // ---------------- 遮挡体:地形 + 双塔 → 一棵 BVH ----------------
+  let bvh;
+  {
+    const geos=[terrainGeo.toNonIndexed(),...towerGeos.map(g=>g.toNonIndexed())];
+    let total=0; for(const g of geos) total+=g.attributes.position.array.length;
+    const arr=new Float32Array(total);
+    let off=0;
+    for(const g of geos){arr.set(g.attributes.position.array,off);off+=g.attributes.position.array.length;}
+    const occGeo=new THREE.BufferGeometry();
+    occGeo.setAttribute('position',new THREE.BufferAttribute(arr,3));
+    bvh=new MeshBVH(occGeo);
+  }
+  const _ray=new THREE.Ray();
+  function blocked(ox,oy,oz,dx,dy,dz,far){
+    _ray.origin.set(ox,oy,oz);
+    _ray.direction.set(dx,dy,dz);
+    return !!bvh.raycastFirst(_ray,THREE.DoubleSide,0,far);
+  }
+
+  // ---------------- 太阳 ----------------
+  const MAXEL=24*Math.PI/180;
+  const sunDir=new THREE.Vector3(1,0.3,0);
+  function sunDirAt(t,out){
+    const f=(t-6)/12;
+    const el=MAXEL*Math.sin(Math.PI*f);
+    const az=Math.PI*f;                 // 东(+X)→ 南(+Z)→ 西(-X)
+    const c=Math.cos(el);
+    out.set(c*Math.cos(az),Math.sin(el),c*Math.sin(az));
+    return el;
+  }
+  const sunMesh=new THREE.Mesh(new THREE.SphereGeometry(13,20,14),
+    new THREE.MeshBasicMaterial({color:0xffdf9e}));
+  scene.add(sunMesh);
+  const skyDay=new THREE.Color(0x9fc3dd),skyLow=new THREE.Color(0xe8b07a),skyNight=new THREE.Color(0x11141c);
+
+  // ---------------- 航点 ----------------
+  const waypoints=[
+    {name:'A · 谷底上方',x:0,  z:-30,y:30,color:0x35c46f},
+    {name:'B · 山脊背侧',x:165,z:55, y:95,color:0xe0a23a},
+  ];
+  const state={time:8,sel:0,el:0};
+  const markers=[];
+  for(let i=0;i<waypoints.length;i++){
+    const wp=waypoints[i];
+    const grp=new THREE.Group();
+    const s=new THREE.Mesh(new THREE.SphereGeometry(2.6,20,14),
+      new THREE.MeshLambertMaterial({color:wp.color,emissive:wp.color,emissiveIntensity:0.35}));
+    s.userData.wpIndex=i;
+    grp.add(s);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(3.6,4.5,32),
+      new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,opacity:0.9}));
+    ring.rotation.x=-Math.PI/2;
+    grp.add(ring);
+    const dropGeo=new THREE.BufferGeometry();
+    dropGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
+    const drop=new THREE.Line(dropGeo,new THREE.LineDashedMaterial({color:0xcccccc,dashSize:2,gapSize:2,transparent:true,opacity:0.6}));
+    grp.add(drop);
+    grp.userData={sphere:s,ring,drop};
+    scene.add(grp);
+    markers.push(grp);
+  }
+  function clampAlt(wp){ return clamp(wp.y, terrainH(wp.x,wp.z)+2, 130); }
+  function updateMarkers(){
+    for(let i=0;i<waypoints.length;i++){
+      const wp=waypoints[i],g=markers[i];
+      wp.y=clampAlt(wp);
+      g.position.set(wp.x,wp.y,wp.z);
+      g.userData.ring.visible=(i===state.sel);
+      g.userData.sphere.material.emissiveIntensity=(i===state.sel)?0.9:0.3;
+      const gy=terrainH(wp.x,wp.z);
+      const p=g.userData.drop.geometry.attributes.position;
+      p.setXYZ(0,0,0,0); p.setXYZ(1,0,gy-wp.y,0); p.needsUpdate=true;
+      g.userData.drop.computeLineDistances();
+    }
+  }
+
+  // ---------------- 视线(LOS) ----------------
+  const shadow=new Uint8Array(SEG),blind=new Uint8Array(SEG);
+  const losPos=new Float32Array(SEG*2*3),losCol=new Float32Array(SEG*2*3);
+  const losGeo=new THREE.BufferGeometry();
+  losGeo.setAttribute('position',new THREE.BufferAttribute(losPos,3));
+  losGeo.setAttribute('color',new THREE.BufferAttribute(losCol,3));
+  const losLines=new THREE.LineSegments(losGeo,
+    new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.5}));
+  scene.add(losLines);
+  const cGreen=[0.25,0.75,0.37],cRed=[0.88,0.27,0.23];
+
+  function computeLOS(){
+    const wp=waypoints[state.sel];
+    for(let i=0;i<SEG;i++){
+      const tx=segX(i),ty=DECK_Y+0.6,tz=0;
+      const dx=tx-wp.x,dy=ty-wp.y,dz=tz-wp.z;
+      const dist=Math.hypot(dx,dy,dz);
+      blind[i]=blocked(wp.x,wp.y,wp.z,dx/dist,dy/dist,dz/dist,dist-1.0)?1:0;
+      losPos[i*6]=wp.x; losPos[i*6+1]=wp.y; losPos[i*6+2]=wp.z;
+      losPos[i*6+3]=tx; losPos[i*6+4]=ty; losPos[i*6+5]=tz;
+      const c=blind[i]?cRed:cGreen;
+      losCol[i*6]=c[0];losCol[i*6+1]=c[1];losCol[i*6+2]=c[2];
+      losCol[i*6+3]=c[0];losCol[i*6+4]=c[1];losCol[i*6+5]=c[2];
+    }
+    losGeo.attributes.position.needsUpdate=true;
+    losGeo.attributes.color.needsUpdate=true;
+  }
+
+  // ---------------- 阴影(同一 BVH) ----------------
+  const vPos=terrainGeo.attributes.position,vNorm=terrainGeo.attributes.normal,vCol=terrainGeo.attributes.color;
+  function shadeTerrain(){
+    const day=state.el>0.003;
+    for(let i=0;i<vCount;i++){
+      let f;
+      if(!day) f=0.22;
+      else{
+        const ox=vPos.getX(i)+vNorm.getX(i)*0.6;
+        const oy=vPos.getY(i)+vNorm.getY(i)*0.6+0.2;
+        const oz=vPos.getZ(i)+vNorm.getZ(i)*0.6;
+        f=blocked(ox,oy,oz,sunDir.x,sunDir.y,sunDir.z,5000)?0.32:1.0;
+      }
+      vCol.setXYZ(i,baseCol[i*3]*f,baseCol[i*3+1]*f,baseCol[i*3+2]*f);
+    }
+    vCol.needsUpdate=true;
+  }
+  function shadeDeck(){
+    const day=state.el>0.003;
+    for(let i=0;i<SEG;i++){
+      shadow[i]=(!day||blocked(segX(i),DECK_Y+0.7,0,sunDir.x,sunDir.y,sunDir.z,5000))?1:0;
+    }
+  }
+  const C_LIT=new THREE.Color(0xd9c98c),C_SH=new THREE.Color(0x33405e),
+        C_BL=new THREE.Color(0xe2483a),C_BOTH=new THREE.Color(0x6e2430);
+  function paintDeck(){
+    for(let i=0;i<SEG;i++){
+      const m=segMeshes[i].material;
+      if(blind[i]&&shadow[i]) m.color.copy(C_BOTH);
+      else if(blind[i])       m.color.copy(C_BL);
+      else if(shadow[i])      m.color.copy(C_SH);
+      else                    m.color.copy(C_LIT);
+    }
+  }
+
+  // ---------------- 日照时间带 + 覆盖比例 ----------------
+  const BN=160;
+  const bandWp=new Uint8Array(BN),bandShadow=new Float32Array(BN),bandUnion=new Float32Array(BN);
+  let blindFrac=0;
+  function computeBands(){
+    const wp=waypoints[state.sel];
+    const d=new THREE.Vector3();
+    let bc=0; for(let i=0;i<SEG;i++) bc+=blind[i];
+    blindFrac=bc/SEG;
+    for(let k=0;k<BN;k++){
+      const t=6+12*k/(BN-1);
+      const el=sunDirAt(t,d);
+      if(el<=0.003){bandWp[k]=0;bandShadow[k]=1;bandUnion[k]=1;continue;}
+      bandWp[k]=blocked(wp.x,wp.y,wp.z,d.x,d.y,d.z,5000)?0:1;
+      let s=0,u=0;
+      for(let i=0;i<SEG;i++){
+        const sh=blocked(segX(i),DECK_Y+0.7,0,d.x,d.y,d.z,5000)?1:0;
+        s+=sh; if(sh||blind[i])u++;
+      }
+      bandShadow[k]=s/SEG; bandUnion[k]=u/SEG;
+    }
+  }
+  const bandCanvas=document.getElementById('bandCanvas');
+  const fracCanvas=document.getElementById('fracCanvas');
+  function fitCanvas(c){
+    const r=c.getBoundingClientRect(),dpr=Math.min(devicePixelRatio,2);
+    c.width=Math.max(1,r.width*dpr); c.height=Math.max(1,r.height*dpr);
+    const ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+    return {ctx,w:r.width,h:r.height};
+  }
+  function drawBands(){
+    {
+      const {ctx,w,h}=fitCanvas(bandCanvas);
+      const bw=w/BN;
+      for(let k=0;k<BN;k++){
+        ctx.fillStyle=bandWp[k]?'#e8a33d':'#2a3140';
+        ctx.fillRect(k*bw,0,bw+0.5,h);
+      }
+      ctx.fillStyle='rgba(255,255,255,0.75)';
+      ctx.font='10px system-ui';
+      for(const hh of [6,9,12,15,18]){
+        const x=(hh-6)/12*w;
+        ctx.fillRect(x,0,1,h);
+        ctx.fillText(hh+':00',x+3,h-4);
+      }
+      const cx=(state.time-6)/12*w;
+      ctx.fillStyle='#ff4d4d'; ctx.fillRect(cx-1,0,2.5,h);
+    }
+    {
+      const {ctx,w,h}=fitCanvas(fracCanvas);
+      const styles=getComputedStyle(document.body);
+      ctx.clearRect(0,0,w,h);
+      ctx.strokeStyle='rgba(128,128,128,0.35)';
+      ctx.fillStyle=styles.color; ctx.font='10px system-ui';
+      for(const f of [0,0.5,1]){
+        const y=h-6-f*(h-16);
+        ctx.beginPath();ctx.moveTo(28,y);ctx.lineTo(w,y);ctx.stroke();
+        ctx.fillText(Math.round(f*100)+'%',2,y+3);
+      }
+      const plot=(arr,color,width,dash)=>{
+        ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash||[]);
+        ctx.beginPath();
+        for(let k=0;k<BN;k++){
+          const x=28+(w-28)*k/(BN-1),y=h-6-arr[k]*(h-16);
+          k?ctx.lineTo(x,y):ctx.moveTo(x,y);
+        }
+        ctx.stroke();ctx.setLineDash([]);
+      };
+      plot(bandShadow,'#7f9fd4',1.2);
+      plot(Array.from({length:BN},()=>blindFrac),'#e2483a',1.2,[4,3]);
+      plot(bandUnion,'#c05ce0',2.4);
+      const cx=28+(w-28)*(state.time-6)/12;
+      ctx.strokeStyle='#ff4d4d';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,h);ctx.stroke();
+    }
+  }
+
+  // ---------------- 刷新流程 ----------------
+  const timeInput=document.getElementById('time');
+  const altInput=document.getElementById('alt');
+  const timeLabel=document.getElementById('timeLabel');
+  const altLabel=document.getElementById('altLabel');
+  const statsEl=document.getElementById('stats');
+
+  function updateStats(){
+    let bc=0,sc=0;
+    for(let i=0;i<SEG;i++){bc+=blind[i];sc+=shadow[i];}
+    const elDeg=(state.el*180/Math.PI).toFixed(1);
+    statsEl.textContent=
+      `太阳高度角 ${state.el>0?elDeg+'°':'地平线以下'}\n`+
+      `桥面阴影 ${sc}/${SEG}(${(100*sc/SEG).toFixed(0)}%)\n`+
+      `视线盲区 ${bc}/${SEG}(${(100*bc/SEG).toFixed(0)}%)`;
+  }
+  function refreshTime(){
+    state.time=parseFloat(timeInput.value);
+    state.el=sunDirAt(state.time,sunDir);
+    const hh=Math.floor(state.time),mm=Math.round((state.time-hh)*60);
+    timeLabel.textContent=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+    const day=state.el>0.003;
+    sun.position.copy(sunDir).multiplyScalar(500);
+    sun.intensity=day?2.2:0;
+    hemi.intensity=day?0.85:0.22;
+    sunMesh.visible=day;
+    sunMesh.position.copy(sunDir).multiplyScalar(640);
+    if(!day) bgColor.copy(skyNight);
+    else bgColor.copy(skyLow).lerp(skyDay,clamp(state.el/0.30,0,1));
+    shadeTerrain();
+    shadeDeck();
+    paintDeck();
+    drawBands();
+    updateStats();
+  }
+  function refreshWaypoint(){
+    updateMarkers();
+    const wp=waypoints[state.sel];
+    altInput.value=wp.y;
+    altLabel.textContent=wp.y.toFixed(1)+' m(谷底/脊面以上)';
+    computeLOS();
+    paintDeck();
+    computeBands();
+    drawBands();
+    updateStats();
+  }
+  let pending=false;
+  timeInput.addEventListener('input',()=>{
+    if(pending)return; pending=true;
+    requestAnimationFrame(()=>{pending=false;refreshTime();});
+  });
+  altInput.addEventListener('input',()=>{
+    waypoints[state.sel].y=parseFloat(altInput.value);
+    refreshWaypoint();
+  });
+  document.getElementById('showRays').addEventListener('change',e=>{
+    losLines.visible=e.target.checked;
+  });
+  function selectWp(i){
+    state.sel=i;
+    document.getElementById('wpA').classList.toggle('active',i===0);
+    document.getElementById('wpB').classList.toggle('active',i===1);
+    refreshWaypoint();
+  }
+  document.getElementById('wpA').addEventListener('click',()=>selectWp(0));
+  document.getElementById('wpB').addEventListener('click',()=>selectWp(1));
+
+  // ---------------- 相机控制 ----------------
+  const cam={theta:0.75,phi:1.02,r:310,target:new THREE.Vector3(10,44,0)};
+  function applyCam(){
+    camera.position.set(
+      cam.target.x+cam.r*Math.sin(cam.phi)*Math.cos(cam.theta),
+      cam.target.y+cam.r*Math.cos(cam.phi),
+      cam.target.z+cam.r*Math.sin(cam.phi)*Math.sin(cam.theta));
+    camera.lookAt(cam.target);
+  }
+  const el=renderer.domElement;
+  const pointers=new Map();
+  let moved=0,pinchD=0;
+  el.addEventListener('pointerdown',e=>{
+    el.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    moved=0;
+    if(pointers.size===2){
+      const p=[...pointers.values()];
+      pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+    }
+  });
+  el.addEventListener('pointermove',e=>{
+    const p=pointers.get(e.pointerId);
+    if(!p)return;
+    const dx=e.clientX-p.x,dy=e.clientY-p.y;
+    p.x=e.clientX;p.y=e.clientY;
+    moved+=Math.abs(dx)+Math.abs(dy);
+    if(pointers.size===1){
+      if(e.shiftKey){
+        const s=cam.r*0.0012;
+        const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);
+        const right=new THREE.Vector3().crossVectors(fwd,camera.up).normalize();
+        const up=new THREE.Vector3().crossVectors(right,fwd).normalize();
+        cam.target.addScaledVector(right,-dx*s).addScaledVector(up,dy*s);
+      }else{
+        cam.theta-=dx*0.005;
+        cam.phi=clamp(cam.phi-dy*0.005,0.12,1.52);
+      }
+      applyCam();
+    }else if(pointers.size===2){
+      const ps=[...pointers.values()];
+      const d=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y);
+      if(pinchD>0) cam.r=clamp(cam.r*pinchD/Math.max(d,1),90,750);
+      pinchD=d;
+      applyCam();
+    }
+  });
+  const raycaster=new THREE.Raycaster();
+  function endPointer(e){
+    const wasSingle=pointers.size===1;
+    pointers.delete(e.pointerId);
+    if(wasSingle&&moved<6){
+      const r=el.getBoundingClientRect();
+      const nx=((e.clientX-r.left)/r.width)*2-1;
+      const ny=-((e.clientY-r.top)/r.height)*2+1;
+      raycaster.setFromCamera({x:nx,y:ny},camera);
+      const hits=raycaster.intersectObjects(markers.map(m=>m.userData.sphere));
+      if(hits.length) selectWp(hits[0].object.userData.wpIndex);
+    }
+  }
+  el.addEventListener('pointerup',endPointer);
+  el.addEventListener('pointercancel',endPointer);
+  el.addEventListener('wheel',e=>{
+    e.preventDefault();
+    cam.r=clamp(cam.r*(1+e.deltaY*0.001),90,750);
+    applyCam();
+  },{passive:false});
+
+  // ---------------- 尺寸与主循环 ----------------
+  function resize(){
+    const w=view.clientWidth,h=view.clientHeight;
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h;
+    camera.updateProjectionMatrix();
+    drawBands();
+  }
+  new ResizeObserver(resize).observe(view);
+  resize();
+  applyCam();
+  refreshWaypoint();
+  refreshTime();
+  (function loop(){
+    requestAnimationFrame(loop);
+    renderer.render(scene,camera);
+  })();
+}
+</script>
