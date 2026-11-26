@@ -1,0 +1,23 @@
+{
+  "name": "grass-forest-atlas-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "草方格—林带防护布置图册参数化排版工具",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "opentype.js": "^1.3.4",
+    "paper": "^0.12.18"
+  },
+  "devDependencies": {
+    "@types/opentype.js": "^1.3.8",
+    "puppeteer-core": "^25.19.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7"
+  }
+}
