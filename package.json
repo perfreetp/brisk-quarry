@@ -1,0 +1,20 @@
+{
+  "name": "fruit-tree-pruning-annotator",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "playcanvas": "^2.11.3",
+    "solid-js": "^1.9.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2",
+    "vite-plugin-solid": "^2.11.10"
+  }
+}
