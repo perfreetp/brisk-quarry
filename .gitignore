@@ -10,6 +10,10 @@ id_ed25519*
 *.secret
 secrets.*
 credentials*.json
+dist/
+test-downloads/
+check-*.png
+.aquafarm.json
 .npmrc
 .pypirc
 node_modules/
